@@ -25,12 +25,12 @@ st.markdown(
 )
 
 st.title("🏇 AI競馬予測結果ビューア")
-st.markdown("PCで生成された最新の予測レポートをクラウド上で閲覧します。")
+st.markdown("PCで生成された最新の予測データをクラウド上で閲覧します。")
 st.divider()
 
 # JSONデータのパス
 json_path = Path("predict_results.json")
-prepared_result = None
+loaded_data = None
 
 # 手動アップロード（JSON対応）
 with st.expander("📁 予測データファイル（JSON）のアップロード"):
@@ -39,17 +39,17 @@ with st.expander("📁 予測データファイル（JSON）のアップロー�
     )
     if uploaded_file is not None:
         try:
-            prepared_result = json.load(uploaded_file)
+            loaded_data = json.load(uploaded_file)
             st.success("アップロードされた予測データを表示しています。")
         except Exception as e:
             st.error(f"❌ JSONの読み込みに失敗しました: {e}")
 
 # 自動読み込み
-if prepared_result is None:
+if loaded_data is None:
     if json_path.is_file():
         try:
             with open(json_path, "r", encoding="utf-8") as f:
-                prepared_result = json.load(f)
+                loaded_data = json.load(f)
             st.caption(f"📂 最新の予測データを表示中 ({json_path})")
         except Exception as e:
             st.error(f"❌ 予測データの読み込みに失敗しました: {e}")
@@ -58,6 +58,24 @@ if prepared_result is None:
             "⚠️ 予測データファイル（`predict_results.json`）が見つかりません。\n\n"
             "PC側で予測を実行し、JSONを生成してGitHubにプッシュしてください。"
         )
+
+# データを単一レース（辞書）か複数レース（リスト）かに応じて安全に取得
+prepared_result = None
+if loaded_data is not None:
+    if isinstance(loaded_data, list):
+        if len(loaded_data) > 0:
+            # 複数レースがある場合、セレクトボックスで切り替え可能にする
+            race_labels = [
+                f"R{r.get('id', i + 1)}: {r.get('name', 'レース')}"
+                for i, r in enumerate(loaded_data)
+            ]
+            selected_label = st.selectbox("🎯 表示するレースを選択", race_labels)
+            selected_index = race_labels.index(selected_label)
+            prepared_result = loaded_data[selected_index]
+        else:
+            st.warning("⚠️ 予測データの中にレースが含まれていません。")
+    elif isinstance(loaded_data, dict):
+        prepared_result = loaded_data
 
 # データを基にUIを描画（app_2.py と同じ構成）
 if prepared_result:
