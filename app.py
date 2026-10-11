@@ -26,39 +26,23 @@ st.markdown(
 )
 
 st.title("🏇 AI競馬予測結果ビューア")
-st.markdown("PCで生成された最新の予測データをクラウド上で閲覧します。")
 st.divider()
 
 # JSONデータのパス
 json_path = Path("predict_results.json")
 loaded_data = None
 
-# 手動アップロード（JSON対応）
-with st.expander("📁 予測データファイル（JSON）のアップロード"):
-    uploaded_file = st.file_uploader(
-        "別の予測データファイルをアップロード", type=["json"]
+if json_path.is_file():
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            loaded_data = json.load(f)
+    except Exception as e:
+        st.error(f"❌ 予測データの読み込みに失敗しました: {e}")
+else:
+    st.warning(
+        "⚠️ 予測データファイル（`predict_results.json`）が見つかりません。\n\n"
+        "PC側で予測を実行し、JSONを生成してGitHubにプッシュしてください。"
     )
-    if uploaded_file is not None:
-        try:
-            loaded_data = json.load(uploaded_file)
-            st.success("アップロードされた予測データを表示しています。")
-        except Exception as e:
-            st.error(f"❌ JSONの読み込みに失敗しました: {e}")
-
-# 自動読み込み
-if loaded_data is None:
-    if json_path.is_file():
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                loaded_data = json.load(f)
-            st.caption(f"📂 最新の予測データを表示中 ({json_path})")
-        except Exception as e:
-            st.error(f"❌ 予測データの読み込みに失敗しました: {e}")
-    else:
-        st.warning(
-            "⚠️ 予測データファイル（`predict_results.json`）が見つかりません。\n\n"
-            "PC側で予測を実行し、JSONを生成してGitHubにプッシュしてください。"
-        )
 
 # データを単一レース（辞書）か複数レース（リスト）かに応じて安全に取得
 prepared_result = None
@@ -88,7 +72,7 @@ if prepared_result:
 
     st.subheader("📊 出走馬予測ランキング")
 
-    # 表の項目に「軸馬度」「穴馬度」の星表示を追加
+    # 勝率・軸スコアを削除し、主要項目と星評価に絞ったスッキリしたテーブル
     table_html = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse:collapse; font-size:0.88rem; background:white; border-radius:8px; overflow:hidden; margin-top:8px;">'
     table_html += '<thead><tr style="background:#f1f5f9; color:#334155; border-bottom:2px solid #cbd5e1;">'
     table_html += (
@@ -106,10 +90,6 @@ if prepared_result:
     table_html += (
         '<th style="padding:10px 8px; text-align:left; white-space:nowrap;">騎手</th>'
     )
-    table_html += (
-        '<th style="padding:10px 8px; text-align:right; white-space:nowrap;">勝率</th>'
-    )
-    table_html += '<th style="padding:10px 8px; text-align:right; white-space:nowrap;">軸スコア</th>'
     table_html += '<th style="padding:10px 8px; text-align:center; white-space:nowrap;">軸馬度</th>'
     table_html += '<th style="padding:10px 8px; text-align:center; white-space:nowrap;">穴馬度</th>'
     table_html += "</tr></thead><tbody>"
@@ -120,8 +100,6 @@ if prepared_result:
         num = h["num"]
         name = h["name"]
         jockey = h.get("jockey", "不明")
-        win_str = f"{h['win_score']:.1f}%"
-        axis_str = f"{h['axis_score']:.1f}%"
         axis_stars = h.get("axis_stars", "")
         hole_stars = h.get("hole_stars", "")
 
@@ -133,8 +111,6 @@ if prepared_result:
         table_html += f'<td style="padding:10px 8px; text-align:center; white-space:nowrap;">{badge_html}</td>'
         table_html += f'<td style="padding:10px 8px; text-align:left; font-weight:bold; color:#0f172a; white-space:nowrap;">{name}</td>'
         table_html += f'<td style="padding:10px 8px; text-align:left; color:#475569; white-space:nowrap;">{jockey}</td>'
-        table_html += f'<td style="padding:10px 8px; text-align:right; font-variant-numeric: tabular-nums; font-weight:500; white-space:nowrap;">{win_str}</td>'
-        table_html += f'<td style="padding:10px 8px; text-align:right; font-variant-numeric: tabular-nums; font-weight:500; white-space:nowrap;">{axis_str}</td>'
         table_html += f'<td style="padding:10px 8px; text-align:center;" class="stars">{axis_stars}</td>'
         table_html += f'<td style="padding:10px 8px; text-align:center;" class="stars">{hole_stars}</td>'
         table_html += "</tr>"
