@@ -19,6 +19,7 @@ st.markdown(
     h1 { color: #0f766e; font-size: 1.5rem !important; }
     details { background: #f1f5f9; padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; margin: 4px 0; }
     summary { font-weight: bold; cursor: pointer; color: #0f766e; }
+    .stars { color: #d97706; white-space: nowrap; letter-spacing: 1px; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -64,7 +65,6 @@ prepared_result = None
 if loaded_data is not None:
     if isinstance(loaded_data, list):
         if len(loaded_data) > 0:
-            # 複数レースがある場合、セレクトボックスで切り替え可能にする
             race_labels = [
                 f"R{r.get('id', i + 1)}: {r.get('name', 'レース')}"
                 for i, r in enumerate(loaded_data)
@@ -77,7 +77,7 @@ if loaded_data is not None:
     elif isinstance(loaded_data, dict):
         prepared_result = loaded_data
 
-# データを基にUIを描画（app_2.py と同じ構成）
+# データを基にUIを描画
 if prepared_result:
     st.success(f"🎯 {prepared_result['name']}")
     st.caption(f"📍 {prepared_result['details']}")
@@ -86,9 +86,9 @@ if prepared_result:
     vol = prepared_result["volatility"]
     st.info(f"**混戦度判定: {vol['label']}**\n\n{vol['reason']}")
 
-    st.subheader("📊 出走馬予測ランキング（主要項目）")
+    st.subheader("📊 出走馬予測ランキング")
 
-    # 表の項目を絞り込んだスッキリしたHTMLテーブル
+    # 表の項目に「軸馬度」「穴馬度」の星表示を追加
     table_html = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse:collapse; font-size:0.88rem; background:white; border-radius:8px; overflow:hidden; margin-top:8px;">'
     table_html += '<thead><tr style="background:#f1f5f9; color:#334155; border-bottom:2px solid #cbd5e1;">'
     table_html += (
@@ -110,6 +110,8 @@ if prepared_result:
         '<th style="padding:10px 8px; text-align:right; white-space:nowrap;">勝率</th>'
     )
     table_html += '<th style="padding:10px 8px; text-align:right; white-space:nowrap;">軸スコア</th>'
+    table_html += '<th style="padding:10px 8px; text-align:center; white-space:nowrap;">軸馬度</th>'
+    table_html += '<th style="padding:10px 8px; text-align:center; white-space:nowrap;">穴馬度</th>'
     table_html += "</tr></thead><tbody>"
 
     for h in prepared_result["horses"]:
@@ -120,6 +122,8 @@ if prepared_result:
         jockey = h.get("jockey", "不明")
         win_str = f"{h['win_score']:.1f}%"
         axis_str = f"{h['axis_score']:.1f}%"
+        axis_stars = h.get("axis_stars", "")
+        hole_stars = h.get("hole_stars", "")
 
         badge_html = f'<span style="display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; background:#0f766e; color:white; font-weight:bold; font-size:0.78rem;">{num}</span>'
 
@@ -131,12 +135,14 @@ if prepared_result:
         table_html += f'<td style="padding:10px 8px; text-align:left; color:#475569; white-space:nowrap;">{jockey}</td>'
         table_html += f'<td style="padding:10px 8px; text-align:right; font-variant-numeric: tabular-nums; font-weight:500; white-space:nowrap;">{win_str}</td>'
         table_html += f'<td style="padding:10px 8px; text-align:right; font-variant-numeric: tabular-nums; font-weight:500; white-space:nowrap;">{axis_str}</td>'
+        table_html += f'<td style="padding:10px 8px; text-align:center;" class="stars">{axis_stars}</td>'
+        table_html += f'<td style="padding:10px 8px; text-align:center;" class="stars">{hole_stars}</td>'
         table_html += "</tr>"
 
     table_html += "</tbody></table></div>"
     st.markdown(table_html, unsafe_allow_html=True)
 
-    # 🔍 各馬の詳細コメント・評価理由（トグル形式による補完）
+    # 🔍 各馬の詳細コメント・評価理由（トグル形式）
     with st.expander("🔍 各馬の詳細コメント・評価理由を見る"):
         for h in prepared_result["horses"]:
             st.markdown(
