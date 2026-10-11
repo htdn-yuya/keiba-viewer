@@ -26,7 +26,7 @@ st.markdown("PCで生成された最新の予測レポート（HTML）をクラ�
 st.divider()
 
 # レポートHTMLの保存先パス（reports/predict_results.html）
-default_html_path = Path("reports/predict_results.html")
+default_html_path = Path("predict_results.html")
 
 html_content = None
 
