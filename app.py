@@ -5,7 +5,7 @@ import streamlit as st
 
 # スマホ向けレイアウト＆ページ設定
 st.set_page_config(
-    page_title="AI競馬予測ビューア",
+    page_title="AI競馬予測",
     page_icon="🏇",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -25,7 +25,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🏇 AI競馬予測結果ビューア")
+st.title("🏇 予測結果")
 st.divider()
 
 # JSONデータのパス
@@ -50,7 +50,7 @@ if loaded_data is not None:
     if isinstance(loaded_data, list):
         if len(loaded_data) > 0:
             race_labels = [
-                f"R{r.get('id', i + 1)}: {r.get('name', 'レース')}"
+                f"R{r.get('id', i + 1)}: {r.get('name', 'レース')} ({r.get('details', '').split('/')[0].strip()})"
                 for i, r in enumerate(loaded_data)
             ]
             selected_label = st.selectbox("🎯 表示するレースを選択", race_labels)
@@ -67,12 +67,13 @@ if prepared_result:
     st.caption(f"📍 {prepared_result['details']}")
 
     # 混戦度カード
-    vol = prepared_result["volatility"]
-    st.info(f"**混戦度判定: {vol['label']}**\n\n{vol['reason']}")
+    vol = prepared_result.get("volatility", {})
+    if vol:
+        st.info(f"**混戦度判定: {vol.get('label', '')}**\n\n{vol.get('reason', '')}")
 
     st.subheader("📊 出走馬予測ランキング")
 
-    # 勝率・軸スコアを削除し、主要項目と星評価に絞ったスッキリしたテーブル
+    # 主要項目と星評価に絞ったスッキリしたテーブル
     table_html = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse:collapse; font-size:0.88rem; background:white; border-radius:8px; overflow:hidden; margin-top:8px;">'
     table_html += '<thead><tr style="background:#f1f5f9; color:#334155; border-bottom:2px solid #cbd5e1;">'
     table_html += (
@@ -94,11 +95,11 @@ if prepared_result:
     table_html += '<th style="padding:10px 8px; text-align:center; white-space:nowrap;">穴馬度</th>'
     table_html += "</tr></thead><tbody>"
 
-    for h in prepared_result["horses"]:
-        rank_str = f"{h['rank']}位"
-        tag_str = h["tag"] if h["tag"] else "-"
-        num = h["num"]
-        name = h["name"]
+    for h in prepared_result.get("horses", []):
+        rank_str = f"{h.get('rank', '-')}"
+        tag_str = h.get("tag", "") if h.get("tag") else "-"
+        num = h.get("num", "-")
+        name = h.get("name", "不明")
         jockey = h.get("jockey", "不明")
         axis_stars = h.get("axis_stars", "")
         hole_stars = h.get("hole_stars", "")
@@ -106,7 +107,7 @@ if prepared_result:
         badge_html = f'<span style="display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; background:#0f766e; color:white; font-weight:bold; font-size:0.78rem;">{num}</span>'
 
         table_html += '<tr style="border-bottom:1px solid #e2e8f0;">'
-        table_html += f'<td style="padding:10px 8px; text-align:center; font-weight:bold; color:#0f172a; white-space:nowrap;">{rank_str}</td>'
+        table_html += f'<td style="padding:10px 8px; text-align:center; font-weight:bold; color:#0f172a; white-space:nowrap;">{rank_str}位</td>'
         table_html += f'<td style="padding:10px 8px; text-align:center; white-space:nowrap;"><span style="display:inline-block; padding:2px 6px; border-radius:999px; font-size:0.75rem; font-weight:bold; background:#f1f5f9; color:#0f766e; border:1px solid #cbd5e1;">{tag_str}</span></td>'
         table_html += f'<td style="padding:10px 8px; text-align:center; white-space:nowrap;">{badge_html}</td>'
         table_html += f'<td style="padding:10px 8px; text-align:left; font-weight:bold; color:#0f172a; white-space:nowrap;">{name}</td>'
@@ -120,13 +121,13 @@ if prepared_result:
 
     # 🔍 各馬の詳細コメント・評価理由（トグル形式）
     with st.expander("🔍 各馬の詳細コメント・評価理由を見る"):
-        for h in prepared_result["horses"]:
+        for h in prepared_result.get("horses", []):
             st.markdown(
-                f"**{h['num']}番 {h['name']}** ({h['tag']}) - AI順位: {h['rank']}位"
+                f"**{h.get('num', '')}番 {h.get('name', '')}** ({h.get('tag', '-')}) - AI順位: {h.get('rank', '')}位"
             )
-            st.markdown(f"- コメント: {h['score_comment']}")
+            st.markdown(f"- コメント: {h.get('score_comment', '')}")
             if h.get("reasons"):
-                st.markdown(f"- 要因: {h['reasons']}")
+                st.markdown(f"- 要因: {h.get('reasons', '')}")
             st.divider()
 
     # 🎟️ 自動買い目セクション
@@ -136,13 +137,14 @@ if prepared_result:
             st.markdown(
                 f"""
             <div style="background:white; border:1px solid #cbd5e1; border-left:4px solid #0f766e; padding:10px; border-radius:6px; margin-bottom:8px;">
-                <b>{t["type"]}</b> <span style="background:#0f766e; color:white; padding:2px 6px; border-radius:10px; font-size:0.75rem;">{t["points"]}点</span><br>
-                • 軸: {t["axis"]}<br>
-                • 相手: {t["opponents"]}<br>
-                <small style="color:#64748b;">💡 {t["note"]}</small>
+                <b>{t.get("type", "")}</b> <span style="background:#0f766e; color:white; padding:2px 6px; border-radius:10px; font-size:0.75rem;">{t.get("points", "")}点</span><br>
+                • 軸: {t.get("axis", "")}<br>
+                • 相手: {t.get("opponents", "")}<br>
+                <small style="color:#64748b;">💡 {t.get("note", "")}</small>
             </div>
             """,
                 unsafe_allow_html=True,
             )
 
-    st.markdown(f"**買い目アプローチ:** {vol['approach']}")
+    if vol.get("approach"):
+        st.markdown(f"**買い目アプローチ:** {vol['approach']}")
