@@ -75,7 +75,7 @@ if prepared_result:
 
     st.subheader("📊 出走馬予測ランキング")
 
-    # 脚質・妙味を追加したテーブルレイアウト
+    # 脚質・オッズ・妙味をすべて網羅したテーブルレイアウト
     table_html = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse:collapse; font-size:0.82rem; background:white; border-radius:8px; overflow:hidden; margin-top:8px;">'
     table_html += '<thead><tr style="background:#f1f5f9; color:#334155; border-bottom:2px solid #cbd5e1;">'
     table_html += (
@@ -96,6 +96,7 @@ if prepared_result:
     table_html += (
         '<th style="padding:10px 4px; text-align:center; white-space:nowrap;">脚質</th>'
     )
+    table_html += '<th style="padding:10px 4px; text-align:center; white-space:nowrap;">オッズ</th>'
     table_html += (
         '<th style="padding:10px 4px; text-align:center; white-space:nowrap;">妙味</th>'
     )
@@ -110,6 +111,7 @@ if prepared_result:
         name = h.get("name", "不明")
         jockey = h.get("jockey", "不明")
         running_style = h.get("running_style", "-")
+        odds = h.get("odds", "-")
         myumi_tag = h.get("myumi_tag", "") if h.get("myumi_tag") else "-"
         axis_stars = h.get("axis_stars", "")
         hole_stars = h.get("hole_stars", "")
@@ -123,6 +125,7 @@ if prepared_result:
         table_html += f'<td style="padding:8px 4px; text-align:left; font-weight:bold; color:#0f172a; white-space:nowrap;">{name}</td>'
         table_html += f'<td style="padding:8px 4px; text-align:left; color:#475569; white-space:nowrap;">{jockey}</td>'
         table_html += f'<td style="padding:8px 4px; text-align:center; color:#334155; white-space:nowrap;">{running_style}</td>'
+        table_html += f'<td style="padding:8px 4px; text-align:center; color:#334155; white-space:nowrap;">{odds}倍</td>'
         table_html += f'<td style="padding:8px 4px; text-align:center; color:#b45309; font-size:0.75rem; white-space:nowrap;">{myumi_tag}</td>'
         table_html += f'<td style="padding:8px 4px; text-align:center;" class="stars">{axis_stars}</td>'
         table_html += f'<td style="padding:8px 4px; text-align:center;" class="stars">{hole_stars}</td>'
