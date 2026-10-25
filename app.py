@@ -247,7 +247,7 @@ if prepared_result:
     with tab_anim:
         st.subheader("🎬 トラックレース展開アニメーション")
         st.markdown(
-            "<small style='color:#475569;'>丸数字（①②…）がトラックに沿って約20秒かけてゆっくり動きます。</small>",
+            "<small style='color:#475569;'>丸数字（①②…）が大きめに見やすくトラックを約20秒かけて動きます。</small>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
@@ -358,6 +358,7 @@ if prepared_result:
             track_y = 2.0 * np.sin(t_line)
             df_track = pd.DataFrame({"x": track_x, "y": track_y})
 
+            # 💡 スマホで大きく見やすいようにレンジを狭めて拡大表示
             fig = px.scatter(
                 df_anim,
                 x="x",
@@ -366,9 +367,9 @@ if prepared_result:
                 text="HorseLabel",
                 animation_frame="Phase",
                 animation_group="HorseLabel",
-                range_x=[-5.5, 5.5],
+                range_x=[-4.8, 4.8],
                 range_y=[-3.2, 3.2],
-                height=420,
+                height=480,
             )
 
             # トラックの内ラチ（コース線）
@@ -376,14 +377,14 @@ if prepared_result:
                 x=df_track["x"],
                 y=df_track["y"],
                 mode="lines",
-                line=dict(color="#047857", width=2, dash="dash"),
+                line=dict(color="#047857", width=2.5, dash="dash"),
                 showlegend=False,
                 hoverinfo="skip",
             )
 
             # 🚪 スタート & 🏁 ゴールの絵文字マーカーを追加
             fig.add_annotation(
-                x=4.2,
+                x=3.8,
                 y=0.0,
                 text="🚪 スタート 🏁 ゴール",
                 showarrow=False,
@@ -396,37 +397,44 @@ if prepared_result:
 
             fig.update_traces(
                 textposition="middle center",
-                textfont=dict(size=13, color="white", weight="bold"),
-                marker=dict(size=22, opacity=0.9),
+                textfont=dict(size=14, color="white", weight="bold"),
+                marker=dict(size=28, opacity=0.95),
             )
 
-            # 💡 スマホで触っても縮小・ズームしないよう fixedrange=True と config を設定
-            fig.update_layout(
-                updatemenus=[
-                    {
-                        "type": "buttons",
-                        "showactive": False,
-                        "buttons": [
-                            {
-                                "label": "▶️ スタート",
-                                "method": "animate",
-                                "args": [
-                                    None,
-                                    {
-                                        "frame": {"duration": 2500, "redraw": True},
-                                        "fromcurrent": True,
-                                        "transition": {
-                                            "duration": 2500,
-                                            "easing": "linear",
-                                        },
+            # 💡 カスタムの「▶️ スタート」ボタンのみを配置し、デフォルトの重複ボタンを非表示に
+            custom_updatemenus = [
+                {
+                    "type": "buttons",
+                    "showactive": False,
+                    "buttons": [
+                        {
+                            "label": "▶️ スタート",
+                            "method": "animate",
+                            "args": [
+                                None,
+                                {
+                                    "frame": {"duration": 2500, "redraw": True},
+                                    "fromcurrent": True,
+                                    "transition": {
+                                        "duration": 2500,
+                                        "easing": "linear",
                                     },
-                                ],
-                            }
-                        ],
-                        "x": 0.1,
-                        "y": 1.15,
-                    }
-                ],
+                                },
+                            ],
+                        }
+                    ],
+                    "x": 0.5,
+                    "y": 1.15,
+                    "xanchor": "center",
+                    "yanchor": "top",
+                }
+            ]
+
+            fig.update_layout(
+                updatemenus=custom_updatemenus,
+                sliders=[
+                    {"visible": False}
+                ],  # デフォルトの不要なスライダーを完全非表示
                 xaxis=dict(
                     showgrid=False, zeroline=False, visible=False, fixedrange=True
                 ),
@@ -440,10 +448,9 @@ if prepared_result:
                 ),
                 plot_bgcolor="#ecfdf5",
                 paper_bgcolor="white",
-                margin=dict(l=10, r=10, t=40, b=10),
+                margin=dict(l=5, r=5, t=40, b=5),
             )
 
-            # 💡 ツールバーやスクロールズームを完全に非表示にする config
             chart_config = {
                 "displayModeBar": False,
                 "scrollZoom": False,
@@ -453,7 +460,7 @@ if prepared_result:
 
             st.plotly_chart(fig, use_container_width=True, config=chart_config)
             st.info(
-                "💡 **使い方:** 画面上の **▶️ スタート** ボタンを押すと、約20秒かけて丸数字がトラックを駆け抜けます！"
+                "💡 **使い方:** 画面上の **▶️ スタート** ボタンを押すと、約20秒かけて大きめの丸数字がトラックを駆け抜けます！"
             )
         else:
             st.warning("出走馬データが見つかりません。")
