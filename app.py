@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -11,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# スマホ向けカスタムCSS（デザイン統一・レスポンシブ調整）
+# スマホ向けカスタムCSS（デザイン統一・レスポンシブ調整・馬群風バッジ）
 st.markdown(
     """
 <style>
@@ -20,8 +21,31 @@ st.markdown(
     .metric-card { background: white; border: 1px solid #cbd5e1; padding: 10px; border-radius: 8px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
     .horse-detail-box { background: white; border: 1px solid #cbd5e1; padding: 14px; border-radius: 8px; margin-bottom: 10px; }
     .stars { color: #d97706; white-space: nowrap; letter-spacing: 1px; }
-    .position-badge { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: #0f766e; color: white; font-weight: bold; font-size: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin: 4px; }
-    .phase-box { background: #e6fffa; border: 1px solid #b2f5ea; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; color: #065f46; margin-bottom: 15px; }
+
+    /* 競馬ゲーム風の丸い馬番バッジ */
+    .horse-badge {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: #1e293b;
+        color: white;
+        font-weight: bold;
+        font-size: 1.1rem;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+        border: 2px solid #ffffff;
+        margin: 5px;
+        text-align: center;
+    }
+    .horse-badge-front { background: #0f766e; }
+    .horse-badge-mid { background: #2563eb; }
+    .horse-badge-back { background: #475569; }
+
+    .phase-box { background: #e6fffa; border: 1px solid #b2f5ea; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; color: #065f46; margin-bottom: 15px; font-size: 1.1rem; }
+    .group-box { background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1; min-height: 120px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
 </style>
 """,
     unsafe_allow_html=True,
@@ -97,7 +121,7 @@ if prepared_result:
         [
             "📋 予測一覧 ＆ インサイト",
             "🔍 個別馬・要因可視化",
-            "🎬 リアルタイム位置取り図",
+            "🎬 予測レース展開動画",
         ]
     )
 
@@ -245,11 +269,11 @@ if prepared_result:
                 unsafe_allow_html=True,
             )
 
-    # --- TAB 3: 🎬 競馬中継風・リアルタイム位置取り図 ---
+    # --- TAB 3: 🎬 予測レース展開動画（競馬中継風・自動再生対応） ---
     with tab_anim:
-        st.subheader("🎬 競馬中継風・リアルタイム位置取り図")
+        st.subheader("🎬 予測レース展開動画")
         st.markdown(
-            "<small style='color:#64748b;'>スライダーを動かすと、各馬の隊列（先頭〜後方）がリアルタイムに入れ替わります。</small>",
+            "<small style='color:#475569;'>「▶️ 自動再生」を押すと、スタートからゴールまで馬群の隊列変化が自動で実況再生されます。</small>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
@@ -266,20 +290,59 @@ if prepared_result:
                 "🏁 08. ゴール板",
             ]
 
-            # 💡 format_func を外し、シンプルに安全なスライダーに変更
-            phase_idx = st.slider(
-                "レース進行フェーズを選択",
-                0,
-                len(phases) - 1,
-                0,
-            )
+            # セッションステートで自動再生とステップを管理
+            if "is_playing" not in st.session_state:
+                st.session_state.is_playing = False
+            if "anim_step" not in st.session_state:
+                st.session_state.anim_step = 0
 
-            current_phase_name = phases[phase_idx]
-            st.markdown(
-                f'<div class="phase-box">現在の局面：{current_phase_name}</div>',
-                unsafe_allow_html=True,
-            )
+            # 操作ボタン（自動再生 / 停止）
+            col_b1, col_b2, col_b3 = st.columns([1, 1, 2])
+            with col_b1:
+                if st.button(
+                    "▶️ 自動再生" if not st.session_state.is_playing else "⏹️ 停止",
+                    type="primary",
+                ):
+                    st.session_state.is_playing = not st.session_state.is_playing
+                    st.rerun()
+            with col_b2:
+                if st.button("🔄 最初から"):
+                    st.session_state.is_playing = False
+                    st.session_state.anim_step = 0
+                    st.rerun()
 
+            # 自動再生中のループ処理
+            if st.session_state.is_playing:
+                phase_idx = st.session_state.anim_step
+                current_phase_name = phases[phase_idx]
+                st.markdown(
+                    f'<div class="phase-box">現在の局面：{current_phase_name} (自動再生中...)</div>',
+                    unsafe_allow_html=True,
+                )
+
+                # 次のステップへ
+                st.session_state.anim_step += 1
+                if st.session_state.anim_step >= len(phases):
+                    st.session_state.anim_step = 0
+                    st.session_state.is_playing = False  # ゴールしたら自動停止
+
+                time.sleep(2.0)  # 2秒ごとに進む
+                st.rerun()
+            else:
+                phase_idx = st.slider(
+                    "レース進行フェーズを選択（手動操作）",
+                    0,
+                    len(phases) - 1,
+                    st.session_state.anim_step,
+                )
+                st.session_state.anim_step = phase_idx
+                current_phase_name = phases[phase_idx]
+                st.markdown(
+                    f'<div class="phase-box">現在の局面：{current_phase_name}</div>',
+                    unsafe_allow_html=True,
+                )
+
+            # 各馬のフェーズごとの順位をシミュレーション計算
             total_h = len(horses_list)
             simulated_horses = []
 
@@ -289,7 +352,6 @@ if prepared_result:
                 style = h.get("running_style", "差し")
                 final_rank = h.get("rank", 1)
                 burst = h.get("burst_score", 0.5)
-                maru_label = to_maru_num(num)
 
                 if style == "逃げ":
                     base_pos = 1
@@ -320,7 +382,7 @@ if prepared_result:
                     {
                         "num": num,
                         "name": name,
-                        "maru": maru_label,
+                        "num_str": str(num),
                         "style": style,
                         "rank": max(1, min(total_h, sim_rank)),
                         "final_rank": final_rank,
@@ -334,52 +396,51 @@ if prepared_result:
             mid_group = simulated_horses[chunk_size : chunk_size * 2]
             back_group = simulated_horses[chunk_size * 2 :]
 
-            st.markdown("#### 🏃‍♂️【隊列・ポジション図】")
+            st.markdown("#### 🏃‍♂️【馬群・ポジション隊列図】")
 
             col_a, col_b, col_c = st.columns(3)
 
             with col_a:
-                st.markdown("**先頭集団**")
+                st.markdown("**🚀 先頭集団**")
                 badges_front = "".join(
                     [
-                        f'<div style="text-align:center; display:inline-block; margin:4px;"><span class="position-badge">{h["maru"]}</span><br><small>{h["num"]}番</small></div>'
+                        f'<div class="horse-badge horse-badge-front">{h["num_str"]}</div>'
                         for h in front_group
                     ]
                 )
                 st.markdown(
-                    f'<div style="background:white; padding:10px; border-radius:8px; border:1px solid #cbd5e1; min-height:100px;">{badges_front}</div>',
+                    f'<div class="group-box">{badges_front}</div>',
                     unsafe_allow_html=True,
                 )
 
             with col_b:
-                st.markdown("**中団集団**")
+                st.markdown("**🏃 中団集団**")
                 badges_mid = "".join(
                     [
-                        f'<div style="text-align:center; display:inline-block; margin:4px;"><span class="position-badge" style="background:#2563eb;">{h["maru"]}</span><br><small>{h["num"]}番</small></div>'
+                        f'<div class="horse-badge horse-badge-mid">{h["num_str"]}</div>'
                         for h in mid_group
                     ]
                 )
                 st.markdown(
-                    f'<div style="background:white; padding:10px; border-radius:8px; border:1px solid #cbd5e1; min-height:100px;">{badges_mid}</div>',
-                    unsafe_allow_html=True,
+                    f'<div class="group-box">{badges_mid}</div>', unsafe_allow_html=True
                 )
 
             with col_c:
-                st.markdown("**後方集団**")
+                st.markdown("**🎯 後方集団**")
                 badges_back = "".join(
                     [
-                        f'<div style="text-align:center; display:inline-block; margin:4px;"><span class="position-badge" style="background:#475569;">{h["maru"]}</span><br><small>{h["num"]}番</small></div>'
+                        f'<div class="horse-badge horse-badge-back">{h["num_str"]}</div>'
                         for h in back_group
                     ]
                 )
                 st.markdown(
-                    f'<div style="background:white; padding:10px; border-radius:8px; border:1px solid #cbd5e1; min-height:100px;">{badges_back}</div>',
+                    f'<div class="group-box">{badges_back}</div>',
                     unsafe_allow_html=True,
                 )
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.info(
-                "💡 **使い方:** 上部のスライダーを左右に動かすと、各馬がどのコーナーでどんな隊列になり、最終ゴールへ向かうのかをテレビ中継の実況感覚でチェックできます！"
+                "💡 **使い方:** 「▶️ 自動再生」を押すと競馬中継のように自動で実況進行します。スライダーを使って手動で特定のコーナーを確認することもできます！"
             )
         else:
             st.warning("出走馬データが見つかりません。")
