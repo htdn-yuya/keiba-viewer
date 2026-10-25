@@ -1,9 +1,6 @@
 import json
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 # スマホ向けレイアウト＆ページ設定
@@ -41,18 +38,6 @@ def to_maru_num(n):
     except:
         pass
     return str(n)
-
-
-# 脚質に応じたカラーを返すヘルパー
-def get_style_color(style):
-    if "逃げ" in style:
-        return "#ef4444"  # 赤
-    elif "先行" in style:
-        return "#f59e0b"  # オレンジ
-    elif "差し" in style:
-        return "#3b82f6"  # 青
-    else:
-        return "#6b7280"  # グレー
 
 
 # JSONデータのパス設定
@@ -104,13 +89,12 @@ if prepared_result:
     top_odds = top_horse.get("odds", "N/A") if top_horse else "N/A"
 
     # ==========================================
-    # 📑 タブ切り替え
+    # 📑 シンプルな2タブ構成
     # ==========================================
-    tab_list, tab_detail, tab_anim = st.tabs(
+    tab_list, tab_detail = st.tabs(
         [
             "📋 予測一覧 ＆ インサイト",
-            "🔍 個別馬・要因可視化",
-            "🎬 予測レース展開動画",
+            "🔍 個別馬・要因詳細分析",
         ]
     )
 
@@ -188,7 +172,7 @@ if prepared_result:
             table_html += f'<td style="padding:8px 4px; text-align:center; white-space:nowrap;">{badge_html}</td>'
             table_html += f'<td style="padding:8px 4px; text-align:left; font-weight:bold; color:#0f172a; white-space:nowrap;">{name}</td>'
             table_html += f'<td style="padding:8px 4px; text-align:left; color:#475569; white-space:nowrap;">{jockey}</td>'
-            table_html += f'<td style="padding:8px 4px; text-align:center; color:#334155; white-space:nowrap;">{running_style}</td>'
+            table_html += f'<td style="padding:8px 4px; text-align:center; color:#334155; white-space:nowrap;">{style_badge}</td>'
             table_html += f'<td style="padding:8px 4px; text-align:center; color:#334155; white-space:nowrap;">{odds}倍</td>'
             table_html += f'<td style="padding:8px 4px; text-align:center; color:#b45309; font-size:0.75rem; white-space:nowrap;">{myumi_tag}</td>'
             table_html += f'<td style="padding:8px 4px; text-align:center;" class="stars">{axis_stars}</td>'
@@ -198,11 +182,11 @@ if prepared_result:
         table_html += "</tbody></table></div>"
         st.markdown(table_html, unsafe_allow_html=True)
 
-    # --- TAB 2: 個別馬・要因可視化 ---
+    # --- TAB 2: 個別馬・要因詳細分析 ---
     with tab_detail:
         st.subheader("🔍 個別馬の詳細分析・要因比較")
         st.markdown(
-            "<small style='color:#64748b;'>選択した馬のAI評価スコアの内訳とシグナルを確認できます。</small>",
+            "<small style='color:#64748b;'>選択した馬のAI評価スコアの内訳（基準点・加点・減点・バイアス補正）を確認できます。</small>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
@@ -257,232 +241,5 @@ if prepared_result:
 </div>""",
                 unsafe_allow_html=True,
             )
-
-    # --- TAB 3: 🎬 予測レース展開動画（楕円トラック＋AI強弱連動型アニメーション） ---
-    with tab_anim:
-        st.subheader("🎬 予測レース展開動画")
-        st.markdown(
-            "<small style='color:#475569;'>楕円コースを舞台に、脚質カラーとAI予測スコア（強弱）に応じた馬群の攻防を滑らかにアニメーション再生します。</small>",
-            unsafe_allow_html=True,
-        )
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        if horses_list:
-            total_h = len(horses_list)
-            phases = [
-                "🚪 01. スタート",
-                "📐 02. 第1コーナー",
-                "📐 03. 第2コーナー",
-                "📏 04. 向こう正面",
-                "🔥 05. 第3コーナー（勝負所）",
-                "🔥 06. 第4コーナー（直線入口）",
-                "⚡ 07. 最後の直線",
-                "🏁 08. ゴール板",
-            ]
-
-            anim_data = []
-
-            # トラック上の進行度 (0.0 ~ 1.0)
-            phase_progress = {
-                "🚪 01. スタート": 0.0,
-                "📐 02. 第1コーナー": 0.12,
-                "📐 03. 第2コーナー": 0.25,
-                "📏 04. 向こう正面": 0.45,
-                "🔥 05. 第3コーナー（勝負所）": 0.65,
-                "🔥 06. 第4コーナー（直線入口）": 0.82,
-                "⚡ 07. 最後の直線": 0.93,
-                "🏁 08. ゴール板": 1.0,
-            }
-
-            for h in horses_list:
-                num = h.get("num", 1)
-                style = h.get("running_style", "差し")
-                final_rank = h.get("rank", 1)
-                raw_score = h.get("raw_score", 0.0)  # AI総合評価スコア（強弱の基準）
-                maru_label = to_maru_num(num)
-                color = get_style_color(style)
-
-                # 脚質ごとの初期スタート位置
-                if "逃げ" in style:
-                    base_start = 1
-                elif "先行" in style:
-                    base_start = max(2, int(total_h * 0.3))
-                elif "差し" in style:
-                    base_start = max(4, int(total_h * 0.6))
-                else:
-                    base_start = total_h
-
-                for step_idx, phase in enumerate(phases):
-                    p_val = phase_progress[phase]
-
-                    # フェーズごとの順位変動（AIの強弱スコアを織り込む）
-                    if step_idx == 0:
-                        sim_rank = base_start
-                    elif step_idx in [1, 2]:
-                        sim_rank = (
-                            base_start
-                            if "逃げ" in style or "先行" in style
-                            else int(total_h * 0.8)
-                        )
-                    elif step_idx in [3, 4, 5]:
-                        progress = step_idx / (len(phases) - 1)
-                        # AIの予測順位（final_rank）とスコア（raw_score）に基づく強力なブースト
-                        score_boost = raw_score * 0.5
-                        blend = (
-                            base_start * (1 - progress)
-                            + (final_rank - score_boost) * progress
-                        )
-                        sim_rank = int(max(1, min(total_h, blend)))
-                    elif step_idx == 6:
-                        sim_rank = int(round(base_start * 0.1 + final_rank * 0.9))
-                    else:
-                        sim_rank = final_rank
-
-                    sim_rank = max(1, min(total_h, sim_rank))
-
-                    # 💡 楕円トラック上の座標計算（同じ順位・脚質でもAIの強弱や馬番で少しばらつかせて横並びを解消）
-                    lane_offset = 0.28 * (((int(num) - 1) % 3) - 1.0)
-                    strength_offset = (
-                        (raw_score * 0.02)
-                        if "逃げ" in style or "先行" in style
-                        else 0.0
-                    )
-
-                    effective_s = (
-                        p_val
-                        - (sim_rank - 1) * (0.012 / max(1, total_h - 1))
-                        + strength_offset
-                    )
-                    effective_s = effective_s % 1.0
-
-                    t = 2 * np.pi * effective_s - np.pi / 2
-                    Rx, Ry = 4.2, 2.1
-
-                    x = Rx * np.cos(t) + lane_offset * np.sin(t)
-                    y = Ry * np.sin(t) - lane_offset * np.cos(t)
-
-                    anim_data.append(
-                        {
-                            "Phase": phase,
-                            "HorseLabel": maru_label,
-                            "x": x,
-                            "y": y,
-                            "Color": color,
-                            "Style": style,
-                        }
-                    )
-
-            df_anim = pd.DataFrame(anim_data)
-
-            # トラックのラチ（コース線）用データ
-            t_line = np.linspace(0, 2 * np.pi, 100)
-            track_x = 4.2 * np.cos(t_line)
-            track_y = 2.1 * np.sin(t_line)
-            df_track = pd.DataFrame({"x": track_x, "y": track_y})
-
-            fig = px.scatter(
-                df_anim,
-                x="x",
-                y="y",
-                color="Color",
-                color_discrete_map="identity",
-                text="HorseLabel",
-                animation_frame="Phase",
-                animation_group="HorseLabel",
-                range_x=[-5.2, 5.2],
-                range_y=[-3.2, 3.2],
-                height=420,
-            )
-
-            # トラックの内ラチ線
-            fig.add_scatter(
-                x=df_track["x"],
-                y=df_track["y"],
-                mode="lines",
-                line=dict(color="#047857", width=2.5, dash="dash"),
-                showlegend=False,
-                hoverinfo="skip",
-            )
-
-            # 🚪 スタート & 🏁 ゴールの目印
-            fig.add_annotation(
-                x=4.2,
-                y=0.0,
-                text="🚪 スタート 🏁 ゴール",
-                showarrow=False,
-                font=dict(size=11, color="red", family="sans-serif"),
-                bgcolor="white",
-                bordercolor="red",
-                borderwidth=1,
-                borderpad=3,
-            )
-
-            fig.update_traces(
-                textposition="middle center",
-                textfont=dict(size=13, color="white", weight="bold"),
-                marker=dict(size=26, opacity=0.95, line=dict(width=1.5, color="white")),
-            )
-
-            # 💡 カクつきや二重ボタンをなくした滑らかなカスタム再生ボタン
-            custom_updatemenus = [
-                {
-                    "type": "buttons",
-                    "showactive": False,
-                    "buttons": [
-                        {
-                            "label": "▶️ レース再生スタート",
-                            "method": "animate",
-                            "args": [
-                                None,
-                                {
-                                    "frame": {"duration": 2200, "redraw": True},
-                                    "fromcurrent": True,
-                                    "transition": {
-                                        "duration": 2200,
-                                        "easing": "linear",
-                                    },
-                                },
-                            ],
-                        }
-                    ],
-                    "x": 0.5,
-                    "y": 1.15,
-                    "xanchor": "center",
-                    "yanchor": "top",
-                }
-            ]
-
-            fig.update_layout(
-                updatemenus=custom_updatemenus,
-                sliders=[{"visible": False}],
-                xaxis=dict(
-                    showgrid=False, zeroline=False, visible=False, fixedrange=True
-                ),
-                yaxis=dict(
-                    showgrid=False,
-                    zeroline=False,
-                    visible=False,
-                    scaleanchor="x",
-                    scaleratio=1,
-                    fixedrange=True,
-                ),
-                plot_bgcolor="#ecfdf5",  # 芝生風カラー
-                paper_bgcolor="white",
-                margin=dict(l=10, r=10, t=40, b=10),
-            )
-
-            chart_config = {
-                "displayModeBar": False,
-                "scrollZoom": False,
-                "doubleClick": False,
-                "showTips": False,
-            }
-
-            st.plotly_chart(fig, use_container_width=True, config=chart_config)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.info(
-                "💡 **使い方:** 画面上の **▶️ レース再生スタート** ボタンを押すと、楕円トラックの上でAIの予測スコア（強弱）と脚質に応じた馬群の攻防が滑らかに再生されます！"
-            )
-        else:
-            st.warning("出走馬データが見つかりません。")
+else:
+    st.warning("出走馬データが見つかりません。")
