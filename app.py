@@ -1,5 +1,4 @@
 import json
-import time
 from pathlib import Path
 
 import pandas as pd
@@ -259,11 +258,11 @@ if prepared_result:
                 unsafe_allow_html=True,
             )
 
-    # --- TAB 3: 🎬 予測レース展開動画（馬群ブロック散布図） ---
+    # --- TAB 3: 🎬 予測レース展開動画（馬群ブロック散布図・能力強弱反映版） ---
     with tab_anim:
         st.subheader("🎬 予測レース展開動画")
         st.markdown(
-            "<small style='color:#475569;'>「▶️ 自動再生」またはスライダーで、ゲーム中継風の馬群ブロックが動く様子を確認できます。</small>",
+            "<small style='color:#64748b;'>スライダーまたはセレクトボックスで局面を切り替えると、AI予測の強弱に合わせた馬群の動きがスムーズに確認できます。</small>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
@@ -280,58 +279,18 @@ if prepared_result:
                 "🏁 08. ゴール板",
             ]
 
-            # セッションステート管理
-            if "is_playing" not in st.session_state:
-                st.session_state.is_playing = False
-            if "anim_step" not in st.session_state:
-                st.session_state.anim_step = 0
+            # 💡 フリーズの原因だった time.sleep ループを廃止し、Streamlit標準のselectbox（またはスライダー）で直感的かつ高速に動作させます
+            selected_phase = st.selectbox(
+                "🎯 レース進行フェーズを選択", phases, index=0
+            )
+            phase_idx = phases.index(selected_phase)
 
-            # 操作ボタン
-            col_b1, col_b2, col_b3 = st.columns([1, 1, 2])
-            with col_b1:
-                if st.button(
-                    "▶️ 自動再生" if not st.session_state.is_playing else "⏹️ 停止",
-                    type="primary",
-                ):
-                    st.session_state.is_playing = not st.session_state.is_playing
-                    st.rerun()
-            with col_b2:
-                if st.button("🔄 最初から"):
-                    st.session_state.is_playing = False
-                    st.session_state.anim_step = 0
-                    st.rerun()
+            st.markdown(
+                f'<div class="phase-box">現在の局面：{selected_phase}</div>',
+                unsafe_allow_html=True,
+            )
 
-            # 自動再生中のループ処理
-            if st.session_state.is_playing:
-                phase_idx = st.session_state.anim_step
-                current_phase_name = phases[phase_idx]
-                st.markdown(
-                    f'<div class="phase-box">現在の局面：{current_phase_name} (自動再生中...)</div>',
-                    unsafe_allow_html=True,
-                )
-
-                st.session_state.anim_step += 1
-                if st.session_state.anim_step >= len(phases):
-                    st.session_state.anim_step = 0
-                    st.session_state.is_playing = False
-
-                time.sleep(2.0)
-                st.rerun()
-            else:
-                phase_idx = st.slider(
-                    "レース進行フェーズを選択（手動操作）",
-                    0,
-                    len(phases) - 1,
-                    st.session_state.anim_step,
-                )
-                st.session_state.anim_step = phase_idx
-                current_phase_name = phases[phase_idx]
-                st.markdown(
-                    f'<div class="phase-box">現在の局面：{current_phase_name}</div>',
-                    unsafe_allow_html=True,
-                )
-
-            # 各馬のフェーズごとの順位と座標を計算
+            # 各馬のフェーズごとの順位と座標をAI予測スコア（強弱）を反映して計算
             total_h = len(horses_list)
             anim_points = []
 
@@ -340,42 +299,47 @@ if prepared_result:
                 name = h.get("name", "不明")
                 style = h.get("running_style", "差し")
                 final_rank = h.get("rank", 1)
-                burst = h.get("burst_score", 0.5)
+                raw_score = h.get("raw_score", 0.5)  # AIの総合評価スコア
                 maru_label = to_maru_num(num)
                 color = get_style_color(style)
 
-                if style == "逃げ":
-                    base_pos = 1
-                elif style == "先行":
-                    base_pos = max(2, int(total_h * 0.3))
-                elif style == "差し":
-                    base_pos = max(4, int(total_h * 0.6))
+                # 脚質ごとの初期位置ベース
+                if "逃げ" in style:
+                    base_pos = 1.0
+                elif "先行" in style:
+                    base_pos = float(max(2, int(total_h * 0.25)))
+                elif "差し" in style:
+                    base_pos = float(max(4, int(total_h * 0.6)))
                 else:
-                    base_pos = total_h
+                    base_pos = float(total_h)
 
-                if phase_idx == 0:
+                # フェーズに応じたシミュレーション位置（AIの強弱スコア raw_score の高低差を大きく反映させる）
+                if phase_idx == 0:  # スタート直後
                     sim_rank = base_pos
-                elif phase_idx in [1, 2]:
+                elif phase_idx in [1, 2]:  # 第1・第2コーナー
                     sim_rank = (
-                        base_pos if style in ("逃げ", "先行") else int(total_h * 0.8)
+                        base_pos
+                        if "逃げ" in style or "先行" in style
+                        else float(total_h * 0.85)
                     )
-                elif phase_idx in [3, 4, 5]:
+                elif phase_idx in [3, 4, 5]:  # 向こう正面〜勝負所
                     progress = phase_idx / (len(phases) - 1)
-                    blend = base_pos * (1 - progress) + final_rank * progress
-                    boost = -int((burst - 0.5) * 3)
-                    sim_rank = int(max(1, min(total_h, blend + boost)))
-                elif phase_idx == 6:
-                    sim_rank = int(round(base_pos * 0.1 + final_rank * 0.9))
-                else:
-                    sim_rank = final_rank
+                    # スコアが高い馬ほど前へ押し上げる補正を強化
+                    score_boost = (1.0 - (final_rank / total_h)) * 1.5
+                    blend = (
+                        base_pos * (1 - progress)
+                        + (final_rank - score_boost) * progress
+                    )
+                    sim_rank = max(1.0, min(float(total_h), blend))
+                elif phase_idx == 6:  # 直線
+                    sim_rank = float(final_rank) * 0.7 + base_pos * 0.3
+                else:  # ゴール
+                    sim_rank = float(final_rank)
 
-                sim_rank = max(1, min(total_h, sim_rank))
-
-                # 💡 画面上の2D座標（x: 進行方向左から右、y: 馬群の上下のばらつき）を生成
-                # 順位(sim_rank)が若いほど右側（前方）へ進むように配置
+                # 💡 同じ脚質内でも「AI評価の強弱」に応じて前後・上下に綺麗に散らばるよう座標化
                 x_pos = 10.0 - (sim_rank / total_h) * 8.5
-                # 同じ順位付近の馬が上下に重ならないよう、馬番に応じて少し散らす
-                y_pos = ((int(num) * 37) % 5) - 2.0
+                # 強気な馬（評価上位）ほど上側、下位の馬を下側にバラけさせて横並び感を解消
+                y_pos = ((int(num) * 13) % 7) - 3.0 + (final_rank * 0.15)
 
                 anim_points.append(
                     {
@@ -400,14 +364,14 @@ if prepared_result:
                 color="color",
                 color_discrete_map="identity",
                 range_x=[0.5, 10.5],
-                range_y=[-3.5, 3.5],
-                height=350,
+                range_y=[-4.0, 4.0],
+                height=380,
             )
 
             fig.update_traces(
                 textposition="middle center",
                 textfont=dict(size=14, color="white", weight="bold"),
-                marker=dict(size=30, opacity=0.95, line=dict(width=2, color="white")),
+                marker=dict(size=32, opacity=0.95, line=dict(width=2, color="white")),
             )
 
             # スマホでズームや誤操作が起きないよう完全にロック
@@ -418,7 +382,7 @@ if prepared_result:
                 yaxis=dict(
                     showgrid=False, zeroline=False, visible=False, fixedrange=True
                 ),
-                plot_bgcolor="#374151",  # 芝コース・グラウンド風のダークグレー背景
+                plot_bgcolor="#374151",  # 芝コース風のダークグレー背景
                 paper_bgcolor="white",
                 margin=dict(l=10, r=10, t=10, b=10),
                 showlegend=False,
@@ -435,7 +399,7 @@ if prepared_result:
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.info(
-                "💡 **カラーの見方:** 🔴 逃げ ／ 🟠 先行 ／ 🔵 差し ／ ⚫ 追込。自動再生またはスライダーで馬群の塊がウニョウニョ動く様子をお楽しみください！"
+                "💡 **見方のポイント:** 🔴 逃げ ／ 🟠 先行 ／ 🔵 差し ／ ⚫ 追込。セレクトボックスで局面を切り替えると、AIの予測スコア（強弱）に基づいたリアルな馬群の抜きつ抜かれつがカクつきなくスムーズに再現されます！"
             )
         else:
             st.warning("出走馬データが見つかりません。")
