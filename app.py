@@ -247,7 +247,7 @@ if prepared_result:
     with tab_anim:
         st.subheader("🎬 トラックレース展開アニメーション")
         st.markdown(
-            "<small style='color:#475569;'>競馬場のオーバルコース（楕円トラック）に沿って、スタートからゴールまでの各馬のポジション入れ替わりをスマホでスッキリ再現します。</small>",
+            "<small style='color:#475569;'>丸数字（①②…）がトラックに沿って約20秒かけてゆっくり動きます。</small>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
@@ -268,7 +268,6 @@ if prepared_result:
             anim_data = []
             import random
 
-            # トラック上の位置パラメータ s (0.0 ~ 1.0) をフェーズごとに算出
             phase_progress = {
                 "1. スタート": 0.0,
                 "2. 第1コーナー": 0.12,
@@ -282,13 +281,11 @@ if prepared_result:
 
             for h in horses_list:
                 num = h.get("num", 1)
-                name = h.get("name", "不明")
                 style = h.get("running_style", "差し")
                 final_rank = h.get("rank", 1)
                 burst = h.get("burst_score", 0.5)
-                maru_num = to_maru_num(num)
+                maru_label = to_maru_num(num)
 
-                # 脚質に応じたスタート時のベース順位
                 if style == "逃げ":
                     base_start = random.randint(1, max(2, int(total_h * 0.2)))
                 elif style == "先行":
@@ -303,7 +300,6 @@ if prepared_result:
                 for step_idx, phase in enumerate(phases):
                     p_val = phase_progress[phase]
 
-                    # 進行に応じた順位の推移
                     if step_idx == 0:
                         curr_rank = base_start
                     elif step_idx in [1, 2]:
@@ -329,16 +325,19 @@ if prepared_result:
 
                     curr_rank = max(1, min(total_h, curr_rank))
 
-                    # 楕円トラック上の座標 (x, y) 計算 (反時計回り)
-                    # 順位が上の馬ほど前へ (sを少し進める)
-                    effective_s = p_val - (curr_rank - 1) * (0.03 / max(1, total_h - 1))
+                    # 💡 馬同士が重ならないようにレーン（内外）と前後位置をキレイに分散
+                    lane_offset = 0.35 * (((int(num) - 1) % 4) - 1.5)
+                    s_offset = ((int(num) - 1) // 4) * 0.006
+                    effective_s = (
+                        p_val
+                        - (curr_rank - 1) * (0.015 / max(1, total_h - 1))
+                        - s_offset
+                    )
                     effective_s = effective_s % 1.0
 
                     t = 2 * np.pi * effective_s - np.pi / 2
-                    Rx, Ry = 4.0, 2.0  # コースの横幅・縦幅
+                    Rx, Ry = 4.0, 2.0
 
-                    # イン・外のラチ調整
-                    lane_offset = 0.25 * ((num % 3) - 1)
                     x = Rx * np.cos(t) + lane_offset * np.sin(t)
                     y = Ry * np.sin(t) - lane_offset * np.cos(t)
 
@@ -346,23 +345,20 @@ if prepared_result:
                         {
                             "Phase": phase,
                             "StepOrder": step_idx,
-                            "HorseLabel": f"{maru_num} {name}",
+                            "HorseLabel": maru_label,
                             "x": x,
                             "y": y,
                             "Style": style,
-                            "Rank": curr_rank,
                         }
                     )
 
             df_anim = pd.DataFrame(anim_data)
 
-            # トラック背景用の軌道を描画するためのデータ作成
             t_line = np.linspace(0, 2 * np.pi, 100)
             track_x = 4.0 * np.cos(t_line)
             track_y = 2.0 * np.sin(t_line)
             df_track = pd.DataFrame({"x": track_x, "y": track_y})
 
-            # Plotlyでアニメーション散布図作成
             fig = px.scatter(
                 df_anim,
                 x="x",
@@ -372,11 +368,11 @@ if prepared_result:
                 animation_frame="Phase",
                 animation_group="HorseLabel",
                 range_x=[-5.5, 5.5],
-                range_y=[-3.0, 3.0],
-                height=400,  # スマホで見やすいコンパクトな高さ
+                range_y=[-3.2, 3.2],
+                height=420,
             )
 
-            # トラックの内ラチ（コース線）を追加
+            # トラックの内ラチ（コース線）
             fig.add_scatter(
                 x=df_track["x"],
                 y=df_track["y"],
@@ -386,8 +382,52 @@ if prepared_result:
                 hoverinfo="skip",
             )
 
-            fig.update_traces(textposition="top center", marker=dict(size=16))
+            # 🏁 START / GOAL の目印マーカーを追加
+            fig.add_annotation(
+                x=4.2,
+                y=0.0,
+                text="🏁 START / GOAL",
+                showarrow=False,
+                font=dict(size=11, color="red", family="sans-serif"),
+                bgcolor="white",
+                bordercolor="red",
+                borderwidth=1,
+                borderpad=3,
+            )
+
+            fig.update_traces(
+                textposition="middle center",
+                textfont=dict(size=13, color="white", weight="bold"),
+                marker=dict(size=22, opacity=0.9),
+            )
+
+            # 💡 スタートボタンのみに絞り、2500ms（2.5秒/ステップ × 8 ＝ 約20秒）のゆったりしたアニメーションに設定
             fig.update_layout(
+                updatemenus=[
+                    {
+                        "type": "buttons",
+                        "showactive": False,
+                        "buttons": [
+                            {
+                                "label": "▶️ スタート",
+                                "method": "animate",
+                                "args": [
+                                    None,
+                                    {
+                                        "frame": {"duration": 2500, "redraw": True},
+                                        "fromcurrent": True,
+                                        "transition": {
+                                            "duration": 2500,
+                                            "easing": "linear",
+                                        },
+                                    },
+                                ],
+                            }
+                        ],
+                        "x": 0.1,
+                        "y": 1.15,
+                    }
+                ],
                 xaxis=dict(showgrid=False, zeroline=False, visible=False),
                 yaxis=dict(
                     showgrid=False,
@@ -396,15 +436,14 @@ if prepared_result:
                     scaleanchor="x",
                     scaleratio=1,
                 ),
-                plot_bgcolor="#ecfdf5",  # 芝生風の薄い緑色背景
+                plot_bgcolor="#ecfdf5",
                 paper_bgcolor="white",
-                margin=dict(l=10, r=10, t=30, b=10),
-                transition=dict(duration=700),
+                margin=dict(l=10, r=10, t=40, b=10),
             )
 
             st.plotly_chart(fig, use_container_width=True)
             st.info(
-                "💡 **使い方:** グラフの下にある **▶️（再生ボタン）** を押すと、芝生トラックの上を馬番（①②…）のドットがコーナーに沿って駆け抜けます！"
+                "💡 **使い方:** 画面上の **▶️ スタート** ボタンを押すと、約20秒かけてスタートからゴールまで丸数字がトラックを駆け抜けます！"
             )
         else:
             st.warning("出走馬データが見つかりません。")
