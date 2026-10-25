@@ -325,7 +325,6 @@ if prepared_result:
 
                     curr_rank = max(1, min(total_h, curr_rank))
 
-                    # 💡 馬同士が重ならないようにレーン（内外）と前後位置をキレイに分散
                     lane_offset = 0.35 * (((int(num) - 1) % 4) - 1.5)
                     s_offset = ((int(num) - 1) // 4) * 0.006
                     effective_s = (
@@ -382,13 +381,13 @@ if prepared_result:
                 hoverinfo="skip",
             )
 
-            # 🏁 START / GOAL の目印マーカーを追加
+            # 🚪 スタート & 🏁 ゴールの絵文字マーカーを追加
             fig.add_annotation(
                 x=4.2,
                 y=0.0,
-                text="🏁 START / GOAL",
+                text="🚪 スタート 🏁 ゴール",
                 showarrow=False,
-                font=dict(size=11, color="red", family="sans-serif"),
+                font=dict(size=12, color="red", family="sans-serif"),
                 bgcolor="white",
                 bordercolor="red",
                 borderwidth=1,
@@ -401,7 +400,7 @@ if prepared_result:
                 marker=dict(size=22, opacity=0.9),
             )
 
-            # 💡 スタートボタンのみに絞り、2500ms（2.5秒/ステップ × 8 ＝ 約20秒）のゆったりしたアニメーションに設定
+            # 💡 スマホで触っても縮小・ズームしないよう fixedrange=True と config を設定
             fig.update_layout(
                 updatemenus=[
                     {
@@ -428,22 +427,33 @@ if prepared_result:
                         "y": 1.15,
                     }
                 ],
-                xaxis=dict(showgrid=False, zeroline=False, visible=False),
+                xaxis=dict(
+                    showgrid=False, zeroline=False, visible=False, fixedrange=True
+                ),
                 yaxis=dict(
                     showgrid=False,
                     zeroline=False,
                     visible=False,
                     scaleanchor="x",
                     scaleratio=1,
+                    fixedrange=True,
                 ),
                 plot_bgcolor="#ecfdf5",
                 paper_bgcolor="white",
                 margin=dict(l=10, r=10, t=40, b=10),
             )
 
-            st.plotly_chart(fig, use_container_width=True)
+            # 💡 ツールバーやスクロールズームを完全に非表示にする config
+            chart_config = {
+                "displayModeBar": False,
+                "scrollZoom": False,
+                "doubleClick": False,
+                "showTips": False,
+            }
+
+            st.plotly_chart(fig, use_container_width=True, config=chart_config)
             st.info(
-                "💡 **使い方:** 画面上の **▶️ スタート** ボタンを押すと、約20秒かけてスタートからゴールまで丸数字がトラックを駆け抜けます！"
+                "💡 **使い方:** 画面上の **▶️ スタート** ボタンを押すと、約20秒かけて丸数字がトラックを駆け抜けます！"
             )
         else:
             st.warning("出走馬データが見つかりません。")
