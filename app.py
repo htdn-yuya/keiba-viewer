@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -22,7 +23,6 @@ st.markdown(
     .metric-card { background: white; border: 1px solid #cbd5e1; padding: 10px; border-radius: 8px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
     .horse-detail-box { background: white; border: 1px solid #cbd5e1; padding: 14px; border-radius: 8px; margin-bottom: 10px; }
     .stars { color: #d97706; white-space: nowrap; letter-spacing: 1px; }
-    .phase-box { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; color: #166534; margin-bottom: 15px; font-size: 1.1rem; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -258,18 +258,19 @@ if prepared_result:
                 unsafe_allow_html=True,
             )
 
-    # --- TAB 3: 🎬 予測レース展開動画（馬群ブロック散布図・能力強弱反映版） ---
+    # --- TAB 3: 🎬 予測レース展開動画（楕円トラック＋AI強弱連動型アニメーション） ---
     with tab_anim:
         st.subheader("🎬 予測レース展開動画")
         st.markdown(
-            "<small style='color:#64748b;'>スライダーまたはセレクトボックスで局面を切り替えると、AI予測の強弱に合わせた馬群の動きがスムーズに確認できます。</small>",
+            "<small style='color:#475569;'>楕円コースを舞台に、脚質カラーとAI予測スコア（強弱）に応じた馬群の攻防を滑らかにアニメーション再生します。</small>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
 
         if horses_list:
+            total_h = len(horses_list)
             phases = [
-                "🚪 01. スタート直後",
+                "🚪 01. スタート",
                 "📐 02. 第1コーナー",
                 "📐 03. 第2コーナー",
                 "📏 04. 向こう正面",
@@ -279,113 +280,195 @@ if prepared_result:
                 "🏁 08. ゴール板",
             ]
 
-            # 💡 フリーズの原因だった time.sleep ループを廃止し、Streamlit標準のselectbox（またはスライダー）で直感的かつ高速に動作させます
-            selected_phase = st.selectbox(
-                "🎯 レース進行フェーズを選択", phases, index=0
-            )
-            phase_idx = phases.index(selected_phase)
+            anim_data = []
 
-            st.markdown(
-                f'<div class="phase-box">現在の局面：{selected_phase}</div>',
-                unsafe_allow_html=True,
-            )
-
-            # 各馬のフェーズごとの順位と座標をAI予測スコア（強弱）を反映して計算
-            total_h = len(horses_list)
-            anim_points = []
+            # トラック上の進行度 (0.0 ~ 1.0)
+            phase_progress = {
+                "🚪 01. スタート": 0.0,
+                "📐 02. 第1コーナー": 0.12,
+                "📐 03. 第2コーナー": 0.25,
+                "📏 04. 向こう正面": 0.45,
+                "🔥 05. 第3コーナー（勝負所）": 0.65,
+                "🔥 06. 第4コーナー（直線入口）": 0.82,
+                "⚡ 07. 最後の直線": 0.93,
+                "🏁 08. ゴール板": 1.0,
+            }
 
             for h in horses_list:
                 num = h.get("num", 1)
-                name = h.get("name", "不明")
                 style = h.get("running_style", "差し")
                 final_rank = h.get("rank", 1)
-                raw_score = h.get("raw_score", 0.5)  # AIの総合評価スコア
+                raw_score = h.get("raw_score", 0.0)  # AI総合評価スコア（強弱の基準）
                 maru_label = to_maru_num(num)
                 color = get_style_color(style)
 
-                # 脚質ごとの初期位置ベース
+                # 脚質ごとの初期スタート位置
                 if "逃げ" in style:
-                    base_pos = 1.0
+                    base_start = 1
                 elif "先行" in style:
-                    base_pos = float(max(2, int(total_h * 0.25)))
+                    base_start = max(2, int(total_h * 0.3))
                 elif "差し" in style:
-                    base_pos = float(max(4, int(total_h * 0.6)))
+                    base_start = max(4, int(total_h * 0.6))
                 else:
-                    base_pos = float(total_h)
+                    base_start = total_h
 
-                # フェーズに応じたシミュレーション位置（AIの強弱スコア raw_score の高低差を大きく反映させる）
-                if phase_idx == 0:  # スタート直後
-                    sim_rank = base_pos
-                elif phase_idx in [1, 2]:  # 第1・第2コーナー
-                    sim_rank = (
-                        base_pos
+                for step_idx, phase in enumerate(phases):
+                    p_val = phase_progress[phase]
+
+                    # フェーズごとの順位変動（AIの強弱スコアを織り込む）
+                    if step_idx == 0:
+                        sim_rank = base_start
+                    elif step_idx in [1, 2]:
+                        sim_rank = (
+                            base_start
+                            if "逃げ" in style or "先行" in style
+                            else int(total_h * 0.8)
+                        )
+                    elif step_idx in [3, 4, 5]:
+                        progress = step_idx / (len(phases) - 1)
+                        # AIの予測順位（final_rank）とスコア（raw_score）に基づく強力なブースト
+                        score_boost = raw_score * 0.5
+                        blend = (
+                            base_start * (1 - progress)
+                            + (final_rank - score_boost) * progress
+                        )
+                        sim_rank = int(max(1, min(total_h, blend)))
+                    elif step_idx == 6:
+                        sim_rank = int(round(base_start * 0.1 + final_rank * 0.9))
+                    else:
+                        sim_rank = final_rank
+
+                    sim_rank = max(1, min(total_h, sim_rank))
+
+                    # 💡 楕円トラック上の座標計算（同じ順位・脚質でもAIの強弱や馬番で少しばらつかせて横並びを解消）
+                    lane_offset = 0.28 * (((int(num) - 1) % 3) - 1.0)
+                    strength_offset = (
+                        (raw_score * 0.02)
                         if "逃げ" in style or "先行" in style
-                        else float(total_h * 0.85)
+                        else 0.0
                     )
-                elif phase_idx in [3, 4, 5]:  # 向こう正面〜勝負所
-                    progress = phase_idx / (len(phases) - 1)
-                    # スコアが高い馬ほど前へ押し上げる補正を強化
-                    score_boost = (1.0 - (final_rank / total_h)) * 1.5
-                    blend = (
-                        base_pos * (1 - progress)
-                        + (final_rank - score_boost) * progress
+
+                    effective_s = (
+                        p_val
+                        - (sim_rank - 1) * (0.012 / max(1, total_h - 1))
+                        + strength_offset
                     )
-                    sim_rank = max(1.0, min(float(total_h), blend))
-                elif phase_idx == 6:  # 直線
-                    sim_rank = float(final_rank) * 0.7 + base_pos * 0.3
-                else:  # ゴール
-                    sim_rank = float(final_rank)
+                    effective_s = effective_s % 1.0
 
-                # 💡 同じ脚質内でも「AI評価の強弱」に応じて前後・上下に綺麗に散らばるよう座標化
-                x_pos = 10.0 - (sim_rank / total_h) * 8.5
-                # 強気な馬（評価上位）ほど上側、下位の馬を下側にバラけさせて横並び感を解消
-                y_pos = ((int(num) * 13) % 7) - 3.0 + (final_rank * 0.15)
+                    t = 2 * np.pi * effective_s - np.pi / 2
+                    Rx, Ry = 4.2, 2.1
 
-                anim_points.append(
-                    {
-                        "num": num,
-                        "label": maru_label,
-                        "x": x_pos,
-                        "y": y_pos,
-                        "color": color,
-                        "style": style,
-                        "rank": sim_rank,
-                    }
-                )
+                    x = Rx * np.cos(t) + lane_offset * np.sin(t)
+                    y = Ry * np.sin(t) - lane_offset * np.cos(t)
 
-            df_plot = pd.DataFrame(anim_points)
+                    anim_data.append(
+                        {
+                            "Phase": phase,
+                            "HorseLabel": maru_label,
+                            "x": x,
+                            "y": y,
+                            "Color": color,
+                            "Style": style,
+                        }
+                    )
 
-            # Plotlyで画像のような馬群ブロック散布図を作成
+            df_anim = pd.DataFrame(anim_data)
+
+            # トラックのラチ（コース線）用データ
+            t_line = np.linspace(0, 2 * np.pi, 100)
+            track_x = 4.2 * np.cos(t_line)
+            track_y = 2.1 * np.sin(t_line)
+            df_track = pd.DataFrame({"x": track_x, "y": track_y})
+
             fig = px.scatter(
-                df_plot,
+                df_anim,
                 x="x",
                 y="y",
-                text="label",
-                color="color",
+                color="Color",
                 color_discrete_map="identity",
-                range_x=[0.5, 10.5],
-                range_y=[-4.0, 4.0],
-                height=380,
+                text="HorseLabel",
+                animation_frame="Phase",
+                animation_group="HorseLabel",
+                range_x=[-5.2, 5.2],
+                range_y=[-3.2, 3.2],
+                height=420,
+            )
+
+            # トラックの内ラチ線
+            fig.add_scatter(
+                x=df_track["x"],
+                y=df_track["y"],
+                mode="lines",
+                line=dict(color="#047857", width=2.5, dash="dash"),
+                showlegend=False,
+                hoverinfo="skip",
+            )
+
+            # 🚪 スタート & 🏁 ゴールの目印
+            fig.add_annotation(
+                x=4.2,
+                y=0.0,
+                text="🚪 スタート 🏁 ゴール",
+                showarrow=False,
+                font=dict(size=11, color="red", family="sans-serif"),
+                bgcolor="white",
+                bordercolor="red",
+                borderwidth=1,
+                borderpad=3,
             )
 
             fig.update_traces(
                 textposition="middle center",
-                textfont=dict(size=14, color="white", weight="bold"),
-                marker=dict(size=32, opacity=0.95, line=dict(width=2, color="white")),
+                textfont=dict(size=13, color="white", weight="bold"),
+                marker=dict(size=26, opacity=0.95, line=dict(width=1.5, color="white")),
             )
 
-            # スマホでズームや誤操作が起きないよう完全にロック
+            # 💡 カクつきや二重ボタンをなくした滑らかなカスタム再生ボタン
+            custom_updatemenus = [
+                {
+                    "type": "buttons",
+                    "showactive": False,
+                    "buttons": [
+                        {
+                            "label": "▶️ レース再生スタート",
+                            "method": "animate",
+                            "args": [
+                                None,
+                                {
+                                    "frame": {"duration": 2200, "redraw": True},
+                                    "fromcurrent": True,
+                                    "transition": {
+                                        "duration": 2200,
+                                        "easing": "linear",
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                    "x": 0.5,
+                    "y": 1.15,
+                    "xanchor": "center",
+                    "yanchor": "top",
+                }
+            ]
+
             fig.update_layout(
+                updatemenus=custom_updatemenus,
+                sliders=[{"visible": False}],
                 xaxis=dict(
                     showgrid=False, zeroline=False, visible=False, fixedrange=True
                 ),
                 yaxis=dict(
-                    showgrid=False, zeroline=False, visible=False, fixedrange=True
+                    showgrid=False,
+                    zeroline=False,
+                    visible=False,
+                    scaleanchor="x",
+                    scaleratio=1,
+                    fixedrange=True,
                 ),
-                plot_bgcolor="#374151",  # 芝コース風のダークグレー背景
+                plot_bgcolor="#ecfdf5",  # 芝生風カラー
                 paper_bgcolor="white",
-                margin=dict(l=10, r=10, t=10, b=10),
-                showlegend=False,
+                margin=dict(l=10, r=10, t=40, b=10),
             )
 
             chart_config = {
@@ -399,7 +482,7 @@ if prepared_result:
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.info(
-                "💡 **見方のポイント:** 🔴 逃げ ／ 🟠 先行 ／ 🔵 差し ／ ⚫ 追込。セレクトボックスで局面を切り替えると、AIの予測スコア（強弱）に基づいたリアルな馬群の抜きつ抜かれつがカクつきなくスムーズに再現されます！"
+                "💡 **使い方:** 画面上の **▶️ レース再生スタート** ボタンを押すと、楕円トラックの上でAIの予測スコア（強弱）と脚質に応じた馬群の攻防が滑らかに再生されます！"
             )
         else:
             st.warning("出走馬データが見つかりません。")
