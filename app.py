@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -29,6 +30,18 @@ st.markdown(
 
 st.title("🏇 AI競馬予測結果ビューア")
 st.divider()
+
+
+# 丸数字変換ヘルパー
+def to_maru_num(n):
+    try:
+        n_int = int(n)
+        if 1 <= n_int <= 20:
+            return chr(0x2460 + n_int - 1)
+    except:
+        pass
+    return str(n)
+
 
 # JSONデータのパス設定
 json_path = Path("predict_results_2.json")
@@ -76,13 +89,13 @@ if prepared_result:
     top_odds = top_horse.get("odds", "N/A") if top_horse else "N/A"
 
     # ==========================================
-    # 📑 タブ切り替え（「予測一覧」 / 「個別馬詳細」 / 「レース展開アニメーション」）
+    # 📑 タブ切り替え
     # ==========================================
     tab_list, tab_detail, tab_anim = st.tabs(
         [
             "📋 予測一覧 ＆ インサイト",
             "🔍 個別馬・要因可視化",
-            "🎬 レース展開アニメーション",
+            "🎬 トラックレースアニメーション",
         ]
     )
 
@@ -98,7 +111,7 @@ if prepared_result:
         with col2:
             num_val = top_horse.get("num", "-") if top_horse else "-"
             st.markdown(
-                f'<div class="metric-card"><small>本命予測1位</small><br><b>{num_val}番 ({top_odds}倍)</b></div>',
+                f'<div class="metric-card"><small>本命予測1位</small><br><b>{to_maru_num(num_val)} {top_odds}倍</b></div>',
                 unsafe_allow_html=True,
             )
         with col3:
@@ -145,7 +158,7 @@ if prepared_result:
             axis_stars = h.get("axis_stars", "")
             hole_stars = h.get("hole_stars", "")
 
-            badge_html = f'<span style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:#0f766e; color:white; font-weight:bold; font-size:0.7rem;">{num}</span>'
+            badge_html = f'<span style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:#0f766e; color:white; font-weight:bold; font-size:0.75rem;">{to_maru_num(num)}</span>'
             style_badge = f'<span style="display:inline-block; padding:2px 4px; border-radius:4px; font-size:0.7rem; background:#e2e8f0; color:#1e293b; font-weight:bold;">{running_style}</span>'
 
             myumi_badge = "-"
@@ -174,13 +187,13 @@ if prepared_result:
     with tab_detail:
         st.subheader("🔍 個別馬の詳細分析・要因比較")
         st.markdown(
-            "<small style='color:#64748b;'>選択した馬のAI評価スコアの内訳（基準点・加点・減点合計・後付けバイアス補正）とシグナルを詳細に確認できます。</small>",
+            "<small style='color:#64748b;'>選択した馬のAI評価スコアの内訳とシグナルを確認できます。</small>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
 
         horse_options = [
-            f"{h.get('rank', '-')}位: {h.get('num', '-')}番 {h.get('name', '不明')} ({h.get('tag') if h.get('tag') else '一般'})"
+            f"{h.get('rank', '-')}位: {to_maru_num(h.get('num', '-'))}番 {h.get('name', '不明')} ({h.get('tag') if h.get('tag') else '一般'})"
             for h in horses_list
         ]
         selected_horse_str = st.selectbox("詳細を確認する馬を選択", horse_options)
@@ -203,7 +216,7 @@ if prepared_result:
 
             st.markdown(
                 f"""<div class="horse-detail-box">
-<h4 style="margin:0; color:#0f766e;">{h.get("num", "-")}番 {h.get("name", "不明")} <span style="font-size:0.9rem; color:#475569;">({h.get("rank", "-")}位)</span></h4>
+<h4 style="margin:0; color:#0f766e;">{to_maru_num(h.get("num", "-"))}番 {h.get("name", "不明")} <span style="font-size:0.9rem; color:#475569;">({h.get("rank", "-")}位)</span></h4>
 <hr style="margin:8px 0; border:0; border-top:1px solid #e2e8f0;">
 <b>🏷️ タグ:</b> {h.get("tag") if h.get("tag") else "特になし"}<br>
 <b>🏇 騎手 / 脚質:</b> {h.get("jockey", "不明")} / {h.get("running_style", "-")}<br>
@@ -230,38 +243,50 @@ if prepared_result:
                 unsafe_allow_html=True,
             )
 
-    # --- TAB 3: 🎬 レース展開アニメーション ---
+    # --- TAB 3: 🎬 トラックレースアニメーション ---
     with tab_anim:
-        st.subheader("🎬 レース展開シミュレーション・アニメーション")
+        st.subheader("🎬 トラックレース展開アニメーション")
         st.markdown(
-            "<small style='color:#475569;'>AIの予測順位、脚質（逃げ・先行・差し・追込）、爆発力スコアをベースに、スタートからゴールまでの順位変動をアニメーションで再現します。</small>",
+            "<small style='color:#475569;'>競馬場のオーバルコース（楕円トラック）に沿って、スタートからゴールまでの各馬のポジション入れ替わりをスマホでスッキリ再現します。</small>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
 
         if horses_list:
             total_h = len(horses_list)
-            # コーナーの定義
             phases = [
                 "1. スタート",
                 "2. 第1コーナー",
                 "3. 第2コーナー",
-                "4. 第3コーナー",
-                "5. 第4コーナー",
-                "6. 直線",
-                "7. ゴール",
+                "4. 向こう正面",
+                "5. 第3コーナー",
+                "6. 第4コーナー",
+                "7. 直線",
+                "8. ゴール",
             ]
 
             anim_data = []
             import random
 
-            # 再現性を保ちつつ各馬の初期位置や道中の動きを生成
+            # トラック上の位置パラメータ s (0.0 ~ 1.0) をフェーズごとに算出
+            phase_progress = {
+                "1. スタート": 0.0,
+                "2. 第1コーナー": 0.12,
+                "3. 第2コーナー": 0.25,
+                "4. 向こう正面": 0.45,
+                "5. 第3コーナー": 0.65,
+                "6. 第4コーナー": 0.82,
+                "7. 直線": 0.93,
+                "8. ゴール": 1.0,
+            }
+
             for h in horses_list:
                 num = h.get("num", 1)
                 name = h.get("name", "不明")
                 style = h.get("running_style", "差し")
                 final_rank = h.get("rank", 1)
                 burst = h.get("burst_score", 0.5)
+                maru_num = to_maru_num(num)
 
                 # 脚質に応じたスタート時のベース順位
                 if style == "逃げ":
@@ -270,84 +295,116 @@ if prepared_result:
                     base_start = random.randint(2, max(4, int(total_h * 0.4)))
                 elif style == "差し":
                     base_start = random.randint(int(total_h * 0.4), int(total_h * 0.7))
-                else:  # 追込
+                else:
                     base_start = random.randint(int(total_h * 0.7), total_h)
 
                 base_start = max(1, min(total_h, base_start))
 
                 for step_idx, phase in enumerate(phases):
-                    if step_idx == 0:  # スタート
+                    p_val = phase_progress[phase]
+
+                    # 進行に応じた順位の推移
+                    if step_idx == 0:
                         curr_rank = base_start
-                    elif step_idx in [1, 2]:  # 1C, 2C
-                        if style == "逃げ":
-                            curr_rank = random.randint(1, max(2, int(total_h * 0.25)))
-                        elif style == "先行":
-                            curr_rank = random.randint(2, max(5, int(total_h * 0.45)))
-                        elif style == "差し":
-                            curr_rank = random.randint(
-                                int(total_h * 0.4), int(total_h * 0.8)
-                            )
-                        else:
-                            curr_rank = random.randint(int(total_h * 0.75), total_h)
-                    elif step_idx in [3, 4]:  # 3C, 4C (勝負所)
-                        # 爆発力が高い馬はここで順位を上げる
+                    elif step_idx in [1, 2]:
+                        curr_rank = (
+                            base_start
+                            if style in ("逃げ", "先行")
+                            else int(total_h * 0.7)
+                        )
+                    elif step_idx in [3, 4, 5]:
                         progress_ratio = step_idx / len(phases)
                         target_blend = (
                             base_start * (1 - progress_ratio)
                             + final_rank * progress_ratio
                         )
-                        burst_boost = -int(
-                            (burst - 0.5) * 3
-                        )  # 爆発力高ければ順位が上に（数値が小さい方へ）
+                        burst_boost = -int((burst - 0.5) * 3)
                         curr_rank = int(
                             max(1, min(total_h, target_blend + burst_boost))
                         )
-                    elif step_idx == 5:  # 直線
-                        # ゴール手前に向けて最終順位に収束
-                        curr_rank = int(round(base_start * 0.2 + final_rank * 0.8))
-                    else:  # ゴール
+                    elif step_idx == 6:
+                        curr_rank = int(round(base_start * 0.15 + final_rank * 0.85))
+                    else:
                         curr_rank = final_rank
 
                     curr_rank = max(1, min(total_h, curr_rank))
+
+                    # 楕円トラック上の座標 (x, y) 計算 (反時計回り)
+                    # 順位が上の馬ほど前へ (sを少し進める)
+                    effective_s = p_val - (curr_rank - 1) * (0.03 / max(1, total_h - 1))
+                    effective_s = effective_s % 1.0
+
+                    t = 2 * np.pi * effective_s - np.pi / 2
+                    Rx, Ry = 4.0, 2.0  # コースの横幅・縦幅
+
+                    # イン・外のラチ調整
+                    lane_offset = 0.25 * ((num % 3) - 1)
+                    x = Rx * np.cos(t) + lane_offset * np.sin(t)
+                    y = Ry * np.sin(t) - lane_offset * np.cos(t)
 
                     anim_data.append(
                         {
                             "Phase": phase,
                             "StepOrder": step_idx,
-                            "HorseName": f"{num}番 {name}",
-                            "Rank": curr_rank,
+                            "HorseLabel": f"{maru_num} {name}",
+                            "x": x,
+                            "y": y,
                             "Style": style,
-                            "FinalRank": final_rank,
+                            "Rank": curr_rank,
                         }
                     )
 
             df_anim = pd.DataFrame(anim_data)
 
-            # Plotlyアニメーション散布図（縦軸に順位、横軸にレース進行フェーズ）
+            # トラック背景用の軌道を描画するためのデータ作成
+            t_line = np.linspace(0, 2 * np.pi, 100)
+            track_x = 4.0 * np.cos(t_line)
+            track_y = 2.0 * np.sin(t_line)
+            df_track = pd.DataFrame({"x": track_x, "y": track_y})
+
+            # Plotlyでアニメーション散布図作成
             fig = px.scatter(
                 df_anim,
-                x="Phase",
-                y="Rank",
+                x="x",
+                y="y",
                 color="Style",
-                text="HorseName",
+                text="HorseLabel",
                 animation_frame="Phase",
-                animation_group="HorseName",
-                range_y=[total_h + 1, 0],  # 1位を上に、下に行くほど順位が下がる
-                range_x=[-0.5, len(phases) - 0.5],
-                title="🏇 レース進行・コーナー別ポジション推移",
-                height=500,
+                animation_group="HorseLabel",
+                range_x=[-5.5, 5.5],
+                range_y=[-3.0, 3.0],
+                height=400,  # スマホで見やすいコンパクトな高さ
             )
 
-            fig.update_traces(textposition="top center", marker=dict(size=14))
+            # トラックの内ラチ（コース線）を追加
+            fig.add_scatter(
+                x=df_track["x"],
+                y=df_track["y"],
+                mode="lines",
+                line=dict(color="#047857", width=2, dash="dash"),
+                showlegend=False,
+                hoverinfo="skip",
+            )
+
+            fig.update_traces(textposition="top center", marker=dict(size=16))
             fig.update_layout(
-                xaxis=dict(categoryorder="array", categoryarray=phases, title=""),
-                yaxis=dict(title="予測順位（上ほど上位）", dtick=1),
-                transition=dict(duration=800),
+                xaxis=dict(showgrid=False, zeroline=False, visible=False),
+                yaxis=dict(
+                    showgrid=False,
+                    zeroline=False,
+                    visible=False,
+                    scaleanchor="x",
+                    scaleratio=1,
+                ),
+                plot_bgcolor="#ecfdf5",  # 芝生風の薄い緑色背景
+                paper_bgcolor="white",
+                margin=dict(l=10, r=10, t=30, b=10),
+                transition=dict(duration=700),
             )
 
             st.plotly_chart(fig, use_container_width=True)
             st.info(
-                "💡 **使い方:** グラフの下部にある **▶️（再生ボタン）** を押すと、スタートからゴールまでの各馬のポジション入れ替わりアニメーションが再生されます！"
+                "💡 **使い方:** グラフの下にある **▶️（再生ボタン）** を押すと、芝生トラックの上を馬番（①②…）のドットがコーナーに沿って駆け抜けます！"
             )
         else:
             st.warning("出走馬データが見つかりません。")
