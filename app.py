@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# スマホ向けカスタムCSS（デザイン統一・レスポンシブ調整・馬群風バッジ）
+# スマホ向けカスタムCSS（枠なし・脚質カラー対応の洗練された中継風デザイン）
 st.markdown(
     """
 <style>
@@ -22,30 +22,41 @@ st.markdown(
     .horse-detail-box { background: white; border: 1px solid #cbd5e1; padding: 14px; border-radius: 8px; margin-bottom: 10px; }
     .stars { color: #d97706; white-space: nowrap; letter-spacing: 1px; }
 
-    /* 競馬ゲーム風の丸い馬番バッジ */
-    .horse-badge {
+    /* 競馬ゲーム風の丸い馬番バッジ（脚質カラー対応・枠なし） */
+    .horse-badge-container {
         display: inline-flex;
         flex-direction: column;
         align-items: center;
+        margin: 6px 8px;
+        transition: all 0.3s ease;
+    }
+    .horse-badge {
+        display: flex;
+        align-items: center;
         justify-content: center;
-        width: 42px;
-        height: 42px;
+        width: 44px;
+        height: 44px;
         border-radius: 50%;
-        background: #1e293b;
         color: white;
         font-weight: bold;
-        font-size: 1.1rem;
-        box-shadow: 0 3px 6px rgba(0,0,0,0.2);
-        border: 2px solid #ffffff;
-        margin: 5px;
-        text-align: center;
+        font-size: 1.15rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+        border: 2px solid rgba(255,255,255,0.8);
     }
-    .horse-badge-front { background: #0f766e; }
-    .horse-badge-mid { background: #2563eb; }
-    .horse-badge-back { background: #475569; }
+    .badge-nige { background: #ef4444; }   /* 逃げ: 赤 */
+    .badge-senko { background: #f59e0b; }  /* 先行: オレンジ */
+    .badge-sashi { background: #3b82f6; }  /* 差し: 青 */
+    .badge-oikomi { background: #6b7280; } /* 追込: グレー */
 
-    .phase-box { background: #e6fffa; border: 1px solid #b2f5ea; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; color: #065f46; margin-bottom: 15px; font-size: 1.1rem; }
-    .group-box { background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1; min-height: 120px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
+    .horse-label {
+        font-size: 0.75rem;
+        color: #334155;
+        margin-top: 3px;
+        font-weight: bold;
+    }
+
+    .phase-box { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; color: #166534; margin-bottom: 15px; font-size: 1.1rem; }
+    .section-title { font-size: 0.95rem; font-weight: bold; color: #475569; margin-bottom: 6px; border-left: 4px solid #0f766e; padding-left: 8px; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -64,6 +75,18 @@ def to_maru_num(n):
     except:
         pass
     return str(n)
+
+
+# 脚質に応じたCSSクラスを返すヘルパー
+def get_badge_class(style):
+    if "逃げ" in style:
+        return "badge-nige"
+    elif "先行" in style:
+        return "badge-senko"
+    elif "差し" in style:
+        return "badge-sashi"
+    else:
+        return "badge-oikomi"
 
 
 # JSONデータのパス設定
@@ -269,11 +292,11 @@ if prepared_result:
                 unsafe_allow_html=True,
             )
 
-    # --- TAB 3: 🎬 予測レース展開動画（競馬中継風・自動再生対応） ---
+    # --- TAB 3: 🎬 予測レース展開動画 ---
     with tab_anim:
         st.subheader("🎬 予測レース展開動画")
         st.markdown(
-            "<small style='color:#475569;'>「▶️ 自動再生」を押すと、スタートからゴールまで馬群の隊列変化が自動で実況再生されます。</small>",
+            "<small style='color:#475569;'>「▶️ 自動再生」を押すと、馬群が脚質カラーの丸バッジで滑らかに実況再生されます。</small>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
@@ -296,7 +319,7 @@ if prepared_result:
             if "anim_step" not in st.session_state:
                 st.session_state.anim_step = 0
 
-            # 操作ボタン（自動再生 / 停止）
+            # 操作ボタン
             col_b1, col_b2, col_b3 = st.columns([1, 1, 2])
             with col_b1:
                 if st.button(
@@ -320,13 +343,12 @@ if prepared_result:
                     unsafe_allow_html=True,
                 )
 
-                # 次のステップへ
                 st.session_state.anim_step += 1
                 if st.session_state.anim_step >= len(phases):
                     st.session_state.anim_step = 0
-                    st.session_state.is_playing = False  # ゴールしたら自動停止
+                    st.session_state.is_playing = False
 
-                time.sleep(2.0)  # 2秒ごとに進む
+                time.sleep(2.0)
                 st.rerun()
             else:
                 phase_idx = st.slider(
@@ -382,8 +404,9 @@ if prepared_result:
                     {
                         "num": num,
                         "name": name,
-                        "num_str": str(num),
+                        "maru": to_maru_num(num),
                         "style": style,
+                        "badge_class": get_badge_class(style),
                         "rank": max(1, min(total_h, sim_rank)),
                         "final_rank": final_rank,
                     }
@@ -396,51 +419,47 @@ if prepared_result:
             mid_group = simulated_horses[chunk_size : chunk_size * 2]
             back_group = simulated_horses[chunk_size * 2 :]
 
-            st.markdown("#### 🏃‍♂️【馬群・ポジション隊列図】")
+            st.markdown("<br>", unsafe_allow_html=True)
 
-            col_a, col_b, col_c = st.columns(3)
+            # 枠なし・フラットな中継風馬群レイアウト
+            st.markdown(
+                '<div class="section-title">🚀 先頭集団</div>', unsafe_allow_html=True
+            )
+            badges_front = "".join(
+                [
+                    f'<div class="horse-badge-container"><div class="horse-badge {h["badge_class"]}">{h["maru"]}</div><div class="horse-label">{h["num"]}番</div></div>'
+                    for h in front_group
+                ]
+            )
+            st.markdown(f"<div>{badges_front}</div>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
-            with col_a:
-                st.markdown("**🚀 先頭集団**")
-                badges_front = "".join(
-                    [
-                        f'<div class="horse-badge horse-badge-front">{h["num_str"]}</div>'
-                        for h in front_group
-                    ]
-                )
-                st.markdown(
-                    f'<div class="group-box">{badges_front}</div>',
-                    unsafe_allow_html=True,
-                )
+            st.markdown(
+                '<div class="section-title">🏃 中団集団</div>', unsafe_allow_html=True
+            )
+            badges_mid = "".join(
+                [
+                    f'<div class="horse-badge-container"><div class="horse-badge {h["badge_class"]}">{h["maru"]}</div><div class="horse-label">{h["num"]}番</div></div>'
+                    for h in mid_group
+                ]
+            )
+            st.markdown(f"<div>{badges_mid}</div>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
-            with col_b:
-                st.markdown("**🏃 中団集団**")
-                badges_mid = "".join(
-                    [
-                        f'<div class="horse-badge horse-badge-mid">{h["num_str"]}</div>'
-                        for h in mid_group
-                    ]
-                )
-                st.markdown(
-                    f'<div class="group-box">{badges_mid}</div>', unsafe_allow_html=True
-                )
-
-            with col_c:
-                st.markdown("**🎯 後方集団**")
-                badges_back = "".join(
-                    [
-                        f'<div class="horse-badge horse-badge-back">{h["num_str"]}</div>'
-                        for h in back_group
-                    ]
-                )
-                st.markdown(
-                    f'<div class="group-box">{badges_back}</div>',
-                    unsafe_allow_html=True,
-                )
+            st.markdown(
+                '<div class="section-title">🎯 後方集団</div>', unsafe_allow_html=True
+            )
+            badges_back = "".join(
+                [
+                    f'<div class="horse-badge-container"><div class="horse-badge {h["badge_class"]}">{h["maru"]}</div><div class="horse-label">{h["num"]}番</div></div>'
+                    for h in back_group
+                ]
+            )
+            st.markdown(f"<div>{badges_back}</div>", unsafe_allow_html=True)
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.info(
-                "💡 **使い方:** 「▶️ 自動再生」を押すと競馬中継のように自動で実況進行します。スライダーを使って手動で特定のコーナーを確認することもできます！"
+                "💡 **カラーの見方:** 🔴 逃げ ／ 🟠 先行 ／ 🔵 差し ／ ⚫ 追込。自動再生またはスライダーで展開をお楽しみください！"
             )
         else:
             st.warning("出走馬データが見つかりません。")
