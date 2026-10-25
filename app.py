@@ -56,7 +56,7 @@ if json_path.is_file():
     except Exception as e:
         st.error(f"❌ 予測データの読み込みに失敗しました: {e}")
 else:
-    st.warning("⚠️ 予測データファイルが見つかりません。")
+    st.warning("⚠️ 予測データファイル（predict_results.json）が見つかりません。")
 
 # レースリストの構築
 races_list = []
@@ -68,14 +68,17 @@ elif isinstance(loaded_data, dict):
 prepared_result = None
 
 if races_list:
-    race_labels = [
-        f"R{r.get('id', i + 1)}: {r.get('name', 'レース')} ({r.get('details', '').split('/')[0].strip()})"
-        for i, r in enumerate(races_list)
-    ]
+    try:
+        race_labels = [
+            f"R{r.get('id', i + 1)}: {r.get('name', 'レース')} ({r.get('details', '').split('/')[0].strip()})"
+            for i, r in enumerate(races_list)
+        ]
 
-    selected_label = st.selectbox("🎯 表示するレースを選択", race_labels)
-    selected_index = race_labels.index(selected_label)
-    prepared_result = races_list[selected_index]
+        selected_label = st.selectbox("🎯 表示するレースを選択", race_labels)
+        selected_index = race_labels.index(selected_label)
+        prepared_result = races_list[selected_index]
+    except Exception as e:
+        st.error(f"❌ レース選択メニューの構築中にエラーが発生しました: {e}")
 
 # 選択されたレースのデータを描画
 if prepared_result:
@@ -115,7 +118,7 @@ if prepared_result:
             )
         with col3:
             myumi_count = sum(
-                1 for h in horses_list if "旨味" in h.get("myumi_tag", "")
+                1 for h in horses_list if "旨味" in str(h.get("myumi_tag", ""))
             )
             st.markdown(
                 f'<div class="metric-card"><small>妙味馬検知</small><br><b>{myumi_count}頭</b></div>',
@@ -161,9 +164,9 @@ if prepared_result:
             style_badge = f'<span style="display:inline-block; padding:2px 4px; border-radius:4px; font-size:0.7rem; background:#e2e8f0; color:#1e293b; font-weight:bold;">{running_style}</span>'
 
             myumi_badge = "-"
-            if "旨味" in myumi_tag:
+            if "旨味" in str(myumi_tag):
                 myumi_badge = '<span style="color:#d97706; font-weight:bold; font-size:0.7rem;">🔥 旨味大</span>'
-            elif "トリガミ" in myumi_tag:
+            elif "トリガミ" in str(myumi_tag):
                 myumi_badge = '<span style="color:#dc2626; font-weight:bold; font-size:0.7rem;">⚠️ 注意</span>'
 
             table_html += '<tr style="border-bottom:1px solid #e2e8f0;">'
@@ -242,7 +245,7 @@ if prepared_result:
                 unsafe_allow_html=True,
             )
 
-    # --- TAB 3: 🎬 リアルタイム位置取り図（競馬中継風） ---
+    # --- TAB 3: 🎬 競馬中継風・リアルタイム位置取り図 ---
     with tab_anim:
         st.subheader("🎬 競馬中継風・リアルタイム位置取り図")
         st.markdown(
@@ -252,7 +255,6 @@ if prepared_result:
         st.markdown("<br>", unsafe_allow_html=True)
 
         if horses_list:
-            # 競馬の進行フェーズ定義
             phases = [
                 "🚪 01. スタート直後",
                 "📐 02. 第1コーナー",
@@ -264,7 +266,6 @@ if prepared_result:
                 "🏁 08. ゴール板",
             ]
 
-            # スライダーでフェーズを選択
             phase_idx = st.slider(
                 "レース進行フェーズを選択",
                 0,
@@ -279,7 +280,6 @@ if prepared_result:
                 unsafe_allow_html=True,
             )
 
-            # 各馬のフェーズごとの順位をシミュレーション計算
             total_h = len(horses_list)
             simulated_horses = []
 
@@ -291,7 +291,6 @@ if prepared_result:
                 burst = h.get("burst_score", 0.5)
                 maru_label = to_maru_num(num)
 
-                # 脚質に応じたスタート時の位置
                 if style == "逃げ":
                     base_pos = 1
                 elif style == "先行":
@@ -301,21 +300,20 @@ if prepared_result:
                 else:
                     base_pos = total_h
 
-                # フェーズに応じた順位の推移
-                if phase_idx == 0:  # スタート
+                if phase_idx == 0:
                     sim_rank = base_pos
-                elif phase_idx in [1, 2]:  # 1C, 2C
+                elif phase_idx in [1, 2]:
                     sim_rank = (
                         base_pos if style in ("逃げ", "先行") else int(total_h * 0.8)
                     )
-                elif phase_idx in [3, 4, 5]:  # 向こう正面、3C, 4C
+                elif phase_idx in [3, 4, 5]:
                     progress = phase_idx / (len(phases) - 1)
                     blend = base_pos * (1 - progress) + final_rank * progress
                     boost = -int((burst - 0.5) * 3)
                     sim_rank = int(max(1, min(total_h, blend + boost)))
-                elif phase_idx == 6:  # 直線
+                elif phase_idx == 6:
                     sim_rank = int(round(base_pos * 0.1 + final_rank * 0.9))
-                else:  # ゴール
+                else:
                     sim_rank = final_rank
 
                 simulated_horses.append(
@@ -329,10 +327,8 @@ if prepared_result:
                     }
                 )
 
-            # 順位順にソート
             simulated_horses.sort(key=lambda x: x["rank"])
 
-            # 隊列グループ（先頭集団、中団集団、後方集団）に分割して表示
             chunk_size = max(1, total_h // 3)
             front_group = simulated_horses[:chunk_size]
             mid_group = simulated_horses[chunk_size : chunk_size * 2]
@@ -356,7 +352,6 @@ if prepared_result:
                 )
 
             with col_b:
-                # プレースホルダーとして中団
                 st.markdown("**中団集団**")
                 badges_mid = "".join(
                     [
