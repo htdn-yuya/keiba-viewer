@@ -2,6 +2,8 @@ import json
 import time
 from pathlib import Path
 
+import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 # スマホ向けレイアウト＆ページ設定
@@ -12,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# スマホ向けカスタムCSS（枠なし・脚質カラー対応の洗練された中継風デザイン）
+# スマホ向けカスタムCSS（デザイン統一・レスポンシブ調整）
 st.markdown(
     """
 <style>
@@ -21,42 +23,7 @@ st.markdown(
     .metric-card { background: white; border: 1px solid #cbd5e1; padding: 10px; border-radius: 8px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
     .horse-detail-box { background: white; border: 1px solid #cbd5e1; padding: 14px; border-radius: 8px; margin-bottom: 10px; }
     .stars { color: #d97706; white-space: nowrap; letter-spacing: 1px; }
-
-    /* 競馬ゲーム風の丸い馬番バッジ（脚質カラー対応・枠なし） */
-    .horse-badge-container {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        margin: 6px 8px;
-        transition: all 0.3s ease;
-    }
-    .horse-badge {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 44px;
-        height: 44px;
-        border-radius: 50%;
-        color: white;
-        font-weight: bold;
-        font-size: 1.15rem;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.15);
-        border: 2px solid rgba(255,255,255,0.8);
-    }
-    .badge-nige { background: #ef4444; }   /* 逃げ: 赤 */
-    .badge-senko { background: #f59e0b; }  /* 先行: オレンジ */
-    .badge-sashi { background: #3b82f6; }  /* 差し: 青 */
-    .badge-oikomi { background: #6b7280; } /* 追込: グレー */
-
-    .horse-label {
-        font-size: 0.75rem;
-        color: #334155;
-        margin-top: 3px;
-        font-weight: bold;
-    }
-
     .phase-box { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; color: #166534; margin-bottom: 15px; font-size: 1.1rem; }
-    .section-title { font-size: 0.95rem; font-weight: bold; color: #475569; margin-bottom: 6px; border-left: 4px solid #0f766e; padding-left: 8px; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -77,16 +44,16 @@ def to_maru_num(n):
     return str(n)
 
 
-# 脚質に応じたCSSクラスを返すヘルパー
-def get_badge_class(style):
+# 脚質に応じたカラーを返すヘルパー
+def get_style_color(style):
     if "逃げ" in style:
-        return "badge-nige"
+        return "#ef4444"  # 赤
     elif "先行" in style:
-        return "badge-senko"
+        return "#f59e0b"  # オレンジ
     elif "差し" in style:
-        return "badge-sashi"
+        return "#3b82f6"  # 青
     else:
-        return "badge-oikomi"
+        return "#6b7280"  # グレー
 
 
 # JSONデータのパス設定
@@ -222,11 +189,11 @@ if prepared_result:
             table_html += f'<td style="padding:8px 4px; text-align:center; white-space:nowrap;">{badge_html}</td>'
             table_html += f'<td style="padding:8px 4px; text-align:left; font-weight:bold; color:#0f172a; white-space:nowrap;">{name}</td>'
             table_html += f'<td style="padding:8px 4px; text-align:left; color:#475569; white-space:nowrap;">{jockey}</td>'
-            table_html += f'<td style="padding:8px 4px; text-align:center; white-space:nowrap;">{style_badge}</td>'
-            table_html += f'<td style="padding:8px 4px; text-align:center; font-weight:bold; color:#0f766e; white-space:nowrap;">{odds}倍</td>'
-            table_html += f'<td style="padding:8px 4px; text-align:center; white-space:nowrap;">{myumi_badge}</td>'
-            table_html += f'<td style="padding:8px 4px; text-align:center; color:#d97706; white-space:nowrap; font-size:0.75rem;">{axis_stars}</td>'
-            table_html += f'<td style="padding:8px 4px; text-align:center; color:#d97706; white-space:nowrap; font-size:0.75rem;">{hole_stars}</td>'
+            table_html += f'<td style="padding:8px 4px; text-align:center; color:#334155; white-space:nowrap;">{running_style}</td>'
+            table_html += f'<td style="padding:8px 4px; text-align:center; color:#334155; white-space:nowrap;">{odds}倍</td>'
+            table_html += f'<td style="padding:8px 4px; text-align:center; color:#b45309; font-size:0.75rem; white-space:nowrap;">{myumi_tag}</td>'
+            table_html += f'<td style="padding:8px 4px; text-align:center;" class="stars">{axis_stars}</td>'
+            table_html += f'<td style="padding:8px 4px; text-align:center;" class="stars">{hole_stars}</td>'
             table_html += "</tr>"
 
         table_html += "</tbody></table></div>"
@@ -292,11 +259,11 @@ if prepared_result:
                 unsafe_allow_html=True,
             )
 
-    # --- TAB 3: 🎬 予測レース展開動画 ---
+    # --- TAB 3: 🎬 予測レース展開動画（馬群ブロック散布図） ---
     with tab_anim:
         st.subheader("🎬 予測レース展開動画")
         st.markdown(
-            "<small style='color:#475569;'>「▶️ 自動再生」を押すと、馬群が脚質カラーの丸バッジで滑らかに実況再生されます。</small>",
+            "<small style='color:#475569;'>「▶️ 自動再生」またはスライダーで、ゲーム中継風の馬群ブロックが動く様子を確認できます。</small>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
@@ -313,7 +280,7 @@ if prepared_result:
                 "🏁 08. ゴール板",
             ]
 
-            # セッションステートで自動再生とステップを管理
+            # セッションステート管理
             if "is_playing" not in st.session_state:
                 st.session_state.is_playing = False
             if "anim_step" not in st.session_state:
@@ -364,9 +331,9 @@ if prepared_result:
                     unsafe_allow_html=True,
                 )
 
-            # 各馬のフェーズごとの順位をシミュレーション計算
+            # 各馬のフェーズごとの順位と座標を計算
             total_h = len(horses_list)
-            simulated_horses = []
+            anim_points = []
 
             for h in horses_list:
                 num = h.get("num", 1)
@@ -374,6 +341,8 @@ if prepared_result:
                 style = h.get("running_style", "差し")
                 final_rank = h.get("rank", 1)
                 burst = h.get("burst_score", 0.5)
+                maru_label = to_maru_num(num)
+                color = get_style_color(style)
 
                 if style == "逃げ":
                     base_pos = 1
@@ -400,66 +369,73 @@ if prepared_result:
                 else:
                     sim_rank = final_rank
 
-                simulated_horses.append(
+                sim_rank = max(1, min(total_h, sim_rank))
+
+                # 💡 画面上の2D座標（x: 進行方向左から右、y: 馬群の上下のばらつき）を生成
+                # 順位(sim_rank)が若いほど右側（前方）へ進むように配置
+                x_pos = 10.0 - (sim_rank / total_h) * 8.5
+                # 同じ順位付近の馬が上下に重ならないよう、馬番に応じて少し散らす
+                y_pos = ((int(num) * 37) % 5) - 2.0
+
+                anim_points.append(
                     {
                         "num": num,
-                        "name": name,
-                        "maru": to_maru_num(num),
+                        "label": maru_label,
+                        "x": x_pos,
+                        "y": y_pos,
+                        "color": color,
                         "style": style,
-                        "badge_class": get_badge_class(style),
-                        "rank": max(1, min(total_h, sim_rank)),
-                        "final_rank": final_rank,
+                        "rank": sim_rank,
                     }
                 )
 
-            simulated_horses.sort(key=lambda x: x["rank"])
+            df_plot = pd.DataFrame(anim_points)
 
-            chunk_size = max(1, total_h // 3)
-            front_group = simulated_horses[:chunk_size]
-            mid_group = simulated_horses[chunk_size : chunk_size * 2]
-            back_group = simulated_horses[chunk_size * 2 :]
+            # Plotlyで画像のような馬群ブロック散布図を作成
+            fig = px.scatter(
+                df_plot,
+                x="x",
+                y="y",
+                text="label",
+                color="color",
+                color_discrete_map="identity",
+                range_x=[0.5, 10.5],
+                range_y=[-3.5, 3.5],
+                height=350,
+            )
 
-            st.markdown("<br>", unsafe_allow_html=True)
+            fig.update_traces(
+                textposition="middle center",
+                textfont=dict(size=14, color="white", weight="bold"),
+                marker=dict(size=30, opacity=0.95, line=dict(width=2, color="white")),
+            )
 
-            # 枠なし・フラットな中継風馬群レイアウト
-            st.markdown(
-                '<div class="section-title">🚀 先頭集団</div>', unsafe_allow_html=True
+            # スマホでズームや誤操作が起きないよう完全にロック
+            fig.update_layout(
+                xaxis=dict(
+                    showgrid=False, zeroline=False, visible=False, fixedrange=True
+                ),
+                yaxis=dict(
+                    showgrid=False, zeroline=False, visible=False, fixedrange=True
+                ),
+                plot_bgcolor="#374151",  # 芝コース・グラウンド風のダークグレー背景
+                paper_bgcolor="white",
+                margin=dict(l=10, r=10, t=10, b=10),
+                showlegend=False,
             )
-            badges_front = "".join(
-                [
-                    f'<div class="horse-badge-container"><div class="horse-badge {h["badge_class"]}">{h["maru"]}</div><div class="horse-label">{h["num"]}番</div></div>'
-                    for h in front_group
-                ]
-            )
-            st.markdown(f"<div>{badges_front}</div>", unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
 
-            st.markdown(
-                '<div class="section-title">🏃 中団集団</div>', unsafe_allow_html=True
-            )
-            badges_mid = "".join(
-                [
-                    f'<div class="horse-badge-container"><div class="horse-badge {h["badge_class"]}">{h["maru"]}</div><div class="horse-label">{h["num"]}番</div></div>'
-                    for h in mid_group
-                ]
-            )
-            st.markdown(f"<div>{badges_mid}</div>", unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
+            chart_config = {
+                "displayModeBar": False,
+                "scrollZoom": False,
+                "doubleClick": False,
+                "showTips": False,
+            }
 
-            st.markdown(
-                '<div class="section-title">🎯 後方集団</div>', unsafe_allow_html=True
-            )
-            badges_back = "".join(
-                [
-                    f'<div class="horse-badge-container"><div class="horse-badge {h["badge_class"]}">{h["maru"]}</div><div class="horse-label">{h["num"]}番</div></div>'
-                    for h in back_group
-                ]
-            )
-            st.markdown(f"<div>{badges_back}</div>", unsafe_allow_html=True)
+            st.plotly_chart(fig, use_container_width=True, config=chart_config)
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.info(
-                "💡 **カラーの見方:** 🔴 逃げ ／ 🟠 先行 ／ 🔵 差し ／ ⚫ 追込。自動再生またはスライダーで展開をお楽しみください！"
+                "💡 **カラーの見方:** 🔴 逃げ ／ 🟠 先行 ／ 🔵 差し ／ ⚫ 追込。自動再生またはスライダーで馬群の塊がウニョウニョ動く様子をお楽しみください！"
             )
         else:
             st.warning("出走馬データが見つかりません。")
