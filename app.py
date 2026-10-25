@@ -56,7 +56,7 @@ if json_path.is_file():
     except Exception as e:
         st.error(f"❌ 予測データの読み込みに失敗しました: {e}")
 else:
-    st.warning("⚠️ 予測データファイル（predict_results.json）が見つかりません。")
+    st.warning("⚠️ 予測データファイルが見つかりません。")
 
 # レースリストの構築
 races_list = []
@@ -249,7 +249,7 @@ if prepared_result:
     with tab_anim:
         st.subheader("🎬 競馬中継風・リアルタイム位置取り図")
         st.markdown(
-            "<small style='color:#475569;'>スライダーを動かすと、各馬の隊列（先頭〜後方）がリアルタイムに入れ替わります。</small>",
+            "<small style='color:#64748b;'>スライダーを動かすと、各馬の隊列（先頭〜後方）がリアルタイムに入れ替わります。</small>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
@@ -266,12 +266,12 @@ if prepared_result:
                 "🏁 08. ゴール板",
             ]
 
+            # 💡 format_func を外し、シンプルに安全なスライダーに変更
             phase_idx = st.slider(
                 "レース進行フェーズを選択",
                 0,
                 len(phases) - 1,
                 0,
-                format_func=lambda x: phases[x],
             )
 
             current_phase_name = phases[phase_idx]
