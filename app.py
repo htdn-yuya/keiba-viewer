@@ -40,17 +40,48 @@ def to_maru_num(n):
     return str(n)
 
 
-# JSONデータのパス設定
-json_path = Path("predict_results_2.json")
-if not json_path.is_file():
+# 開催競馬場を抽出するヘルパー
+RACECOURSES = [
+    "東京",
+    "中山",
+    "京都",
+    "阪神",
+    "中京",
+    "小倉",
+    "福島",
+    "新潟",
+    "札幌",
+    "函館",
+]
+
+
+def extract_venue(details_text):
+    for rc in RACECOURSES:
+        if rc in details_text:
+            return rc
+    return "その他"
+
+
+# JSONデータのパス設定（latest_prediction.json または predict_results系を自動探索）
+json_files = ["latest_prediction.json"] + sorted(
+    [str(p) for p in Path(".").glob("predict_results_*.json")], reverse=True
+)
+json_path = None
+for f in json_files:
+    if Path(f).is_file():
+        json_path = Path(f)
+        break
+
+if not json_path:
     json_path = Path("predict_results.json")
 
 loaded_data = None
 
-if json_path.is_file():
+if json_path and json_path.is_file():
     try:
         with open(json_path, "r", encoding="utf-8") as f:
             loaded_data = json.load(f)
+        st.sidebar.caption(f"📁 読込ファイル: {json_path.name}")
     except Exception as e:
         st.error(f"❌ 予測データの読み込みに失敗しました: {e}")
 else:
@@ -67,24 +98,76 @@ prepared_result = None
 
 if races_list:
     try:
-        race_labels = [
-            f"R{r.get('id', i + 1)}: {r.get('name', 'レース')} ({r.get('details', '').split('/')[0].strip()})"
-            for i, r in enumerate(races_list)
-        ]
+        # 各レースに競馬場情報を付与
+        for r in races_list:
+            r["venue"] = extract_venue(r.get("details", ""))
 
-        selected_label = st.selectbox("🎯 表示するレースを選択", race_labels)
-        selected_index = race_labels.index(selected_label)
-        prepared_result = races_list[selected_index]
+        # 競馬場ごとにレース番号（1R, 2R...）を採番するためのカウンタ
+        venue_counters = {}
+        for r in races_list:
+            v = r.get("venue", "その他")
+            venue_counters[v] = venue_counters.get(v, 0) + 1
+            r["venue_race_num"] = venue_counters[v]
+
+        # 利用可能な競馬場リストの作成
+        available_venues = sorted(
+            list(set(r.get("venue", "その他") for r in races_list))
+        )
+        venue_options = ["すべて"] + available_venues
+
+        # 🏟️ 開催競馬場フィルター
+        col_f1, col_f2 = st.columns([1, 1])
+        with col_f1:
+            selected_venue = st.selectbox("🏟️ 開催競馬場", venue_options)
+
+        # 競馬場による絞り込み
+        if selected_venue != "すべて":
+            filtered_races = [r for r in races_list if r.get("venue") == selected_venue]
+        else:
+            filtered_races = races_list
+
+        if not filtered_races:
+            st.warning("選択された条件に一致するレースがありません。")
+        else:
+            race_labels = []
+            for r in filtered_races:
+                v_name = r.get("venue", "その他")
+                v_num = r.get("venue_race_num", 1)
+                r_name = r.get("name", "レース")
+                details = r.get("details", "")
+                sub_info = details.split("/")[0].strip() if details else ""
+                # 表示例: [東京] 東京1R: 2歳未勝利 (09:40発走...)
+                race_labels.append(
+                    f"[{v_name}] {v_name}{v_num}R: {r_name} ({sub_info})"
+                )
+
+            with col_f2:
+                selected_label = st.selectbox("🎯 表示するレースを選択", race_labels)
+
+            selected_index = race_labels.index(selected_label)
+            prepared_result = filtered_races[selected_index]
+
     except Exception as e:
-        st.error(f"❌ レース選択メニューの構築中にエラーが発生しました: {e}")
+        st.error(f"❌ フィルター・レース選択の構築中にエラーが発生しました: {e}")
 
 # 選択されたレースのデータを描画
 if prepared_result:
     st.markdown(f"### 🎯 {prepared_result.get('name', 'レース名不明')}")
-    st.caption(f"📍 {prepared_result.get('details', '').replace(chr(10), ' ')}")
+    details_text = prepared_result.get("details", "")
+    if details_text:
+        st.caption(f"📍 {details_text.replace(chr(10), ' ')}")
 
     vol = prepared_result.get("volatility", {})
     horses_list = prepared_result.get("horses", [])
+
+    # 勝率またはAI順位順にソート（安全のため）
+    horses_list = sorted(
+        horses_list,
+        key=lambda x: (
+            x.get("rank", 99) if isinstance(x.get("rank"), (int, float)) else 99
+        ),
+    )
+
     top_horse = horses_list[0] if horses_list else None
     top_odds = top_horse.get("odds", "N/A") if top_horse else "N/A"
 
@@ -108,9 +191,13 @@ if prepared_result:
                 unsafe_allow_html=True,
             )
         with col2:
-            num_val = top_horse.get("num", "-") if top_horse else "-"
+            num_val = (
+                top_horse.get("horse_number", top_horse.get("num", "-"))
+                if top_horse
+                else "-"
+            )
             st.markdown(
-                f'<div class="metric-card"><small>本命予測1位</small><br><b>{to_maru_num(num_val)} {top_odds}倍</b></div>',
+                f'<div class="metric-card"><small>本命予測1位</small><br><b>{to_maru_num(num_val)} ({top_odds}倍)</b></div>',
                 unsafe_allow_html=True,
             )
         with col3:
@@ -122,9 +209,10 @@ if prepared_result:
                 unsafe_allow_html=True,
             )
 
-        if vol.get("decision"):
+        decision_msg = vol.get("decision") or prepared_result.get("decision_text")
+        if decision_msg:
             st.markdown(
-                f"<small style='color:#475569;'>💡 {vol['decision']}</small>",
+                f"<small style='color:#475569;'>💡 {decision_msg}</small>",
                 unsafe_allow_html=True,
             )
         st.markdown("<br>", unsafe_allow_html=True)
@@ -148,23 +236,17 @@ if prepared_result:
         for h in horses_list:
             rank_str = f"{h.get('rank', '-')}"
             tag_str = h.get("tag", "") if h.get("tag") else "-"
-            num = h.get("num", "-")
+            num = h.get("horse_number", h.get("num", "-"))
             name = h.get("name", "不明")
             jockey = h.get("jockey", "不明")
             running_style = h.get("running_style", "-")
             odds = h.get("odds", "-")
             myumi_tag = h.get("myumi_tag", "") if h.get("myumi_tag") else "-"
-            axis_stars = h.get("axis_stars", "")
-            hole_stars = h.get("hole_stars", "")
+            axis_stars = h.get("axis_stars", "★★★")
+            hole_stars = h.get("hole_stars", "★★")
 
             badge_html = f'<span style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:#0f766e; color:white; font-weight:bold; font-size:0.75rem;">{to_maru_num(num)}</span>'
             style_badge = f'<span style="display:inline-block; padding:2px 4px; border-radius:4px; font-size:0.7rem; background:#e2e8f0; color:#1e293b; font-weight:bold;">{running_style}</span>'
-
-            myumi_badge = "-"
-            if "旨味" in str(myumi_tag):
-                myumi_badge = '<span style="color:#d97706; font-weight:bold; font-size:0.7rem;">🔥 旨味大</span>'
-            elif "トリガミ" in str(myumi_tag):
-                myumi_badge = '<span style="color:#dc2626; font-weight:bold; font-size:0.7rem;">⚠️ 注意</span>'
 
             table_html += '<tr style="border-bottom:1px solid #e2e8f0;">'
             table_html += f'<td style="padding:8px 4px; text-align:center; font-weight:bold; color:#0f172a; white-space:nowrap;">{rank_str}位</td>'
@@ -186,15 +268,19 @@ if prepared_result:
     with tab_detail:
         st.subheader("🔍 個別馬の詳細分析・要因比較")
         st.markdown(
-            "<small style='color:#64748b;'>選択した馬のAI評価スコアの内訳（基準点・加点・減点・バイアス補正）を確認できます。</small>",
+            "<small style='color:#64748b;'>選択した馬のAI評価スコアの内訳や特記シグナルを確認できます。</small>",
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
 
-        horse_options = [
-            f"{h.get('rank', '-')}位: {to_maru_num(h.get('num', '-'))}番 {h.get('name', '不明')} ({h.get('tag') if h.get('tag') else '一般'})"
-            for h in horses_list
-        ]
+        horse_options = []
+        for h in horses_list:
+            r_num = h.get("horse_number", h.get("num", "-"))
+            r_tag = h.get("tag") if h.get("tag") else "一般"
+            horse_options.append(
+                f"{h.get('rank', '-')}位: {to_maru_num(r_num)}番 {h.get('name', '不明')} ({r_tag})"
+            )
+
         selected_horse_str = st.selectbox("詳細を確認する馬を選択", horse_options)
 
         if selected_horse_str:
@@ -213,9 +299,14 @@ if prepared_result:
                 f"/ 判定: {h.get('myumi_tag')}" if h.get("myumi_tag") else ""
             )
 
+            num_val = h.get("horse_number", h.get("num", "-"))
+            reasons_html = (
+                h.get("reasons") or h.get("score_comment") or "特筆すべき特記事項なし"
+            )
+
             st.markdown(
                 f"""<div class="horse-detail-box">
-<h4 style="margin:0; color:#0f766e;">{to_maru_num(h.get("num", "-"))}番 {h.get("name", "不明")} <span style="font-size:0.9rem; color:#475569;">({h.get("rank", "-")}位)</span></h4>
+<h4 style="margin:0; color:#0f766e;">{to_maru_num(num_val)}番 {h.get("name", "不明")} <span style="font-size:0.9rem; color:#475569;">({h.get("rank", "-")}位)</span></h4>
 <hr style="margin:8px 0; border:0; border-top:1px solid #e2e8f0;">
 <b>🏷️ タグ:</b> {h.get("tag") if h.get("tag") else "特になし"}<br>
 <b>🏇 騎手 / 脚質:</b> {h.get("jockey", "不明")} / {h.get("running_style", "-")}<br>
@@ -236,7 +327,7 @@ if prepared_result:
 </div><br>
 <b>📈 要因分析・モデル寄与度の詳細:</b><br>
 <div style="background:#f8fafc; padding:8px; border-radius:6px; font-size:0.85rem; color:#334155; margin-top:4px;">
-{h.get("reasons") if h.get("reasons") else "特筆すべき特記事項なし"}
+{reasons_html}
 </div>
 </div>""",
                 unsafe_allow_html=True,
