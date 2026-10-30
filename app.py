@@ -62,9 +62,12 @@ def extract_venue(details_text):
     return "その他"
 
 
-# JSONデータのパス設定（latest_prediction.json または predict_results系を自動探索）
-json_files = ["latest_prediction.json"] + sorted(
-    [str(p) for p in Path(".").glob("predict_results_*.json")], reverse=True
+# JSONデータのパス設定
+# 一括予測スクリプトの標準出力 predict_results.json を優先し、
+# 日付付きファイルがあれば最新日付のものを先に読む。
+json_files = (
+    sorted([str(p) for p in Path(".").glob("predict_results_*.json")], reverse=True)
+    + ["predict_results.json", "latest_prediction.json"]
 )
 json_path = None
 for f in json_files:
@@ -215,6 +218,62 @@ if prepared_result:
                 f"<small style='color:#475569;'>💡 {decision_msg}</small>",
                 unsafe_allow_html=True,
             )
+
+        # --- 独立したレースペース予測（AIランキング・スコアとは別表示） ---
+        st.markdown("### 🏁 レース展開・ペース予測")
+        pace_forecast = prepared_result.get("pace_forecast")
+        if isinstance(pace_forecast, dict):
+            pace_value = pace_forecast.get("pace", "判定保留")
+            contest_value = pace_forecast.get("competition_risk", "判定保留")
+            coverage_value = pace_forecast.get("data_coverage")
+            quality_value = pace_forecast.get("data_quality", "不明")
+            coverage_label = (
+                f"{float(coverage_value):.0%}"
+                if isinstance(coverage_value, (int, float))
+                else "不明"
+            )
+
+            pace_col1, pace_col2, pace_col3 = st.columns(3)
+            pace_col1.metric("想定ペース", pace_value)
+            pace_col2.metric("先行争い", contest_value)
+            pace_col3.metric("位置取りデータ利用率", coverage_label)
+            st.caption(
+                f"データ品質：{quality_value}。この展開予測は参考情報であり、"
+                "既存のAIランキング・各馬スコアには加算していません。"
+            )
+
+            candidates = pace_forecast.get("front_runner_candidates") or []
+            if candidates:
+                st.markdown("**前方候補馬**")
+                candidate_rows = [
+                    {
+                        "馬番": item.get("number", "-"),
+                        "馬名": item.get("name", "不明"),
+                        "前方圧力": item.get("pressure", "-"),
+                        "根拠": "・".join(item.get("evidence") or []),
+                        "外枠負荷": "あり" if item.get("outside_draw_effort") else "なし",
+                    }
+                    for item in candidates
+                ]
+                st.dataframe(candidate_rows, hide_index=True, use_container_width=True)
+            else:
+                st.caption("前方候補として抽出された馬はいません。")
+
+            pace_reasons = pace_forecast.get("reasons") or []
+            if pace_reasons:
+                with st.expander("ペース判定の根拠・注意点"):
+                    for reason in pace_reasons:
+                        st.write(f"・{reason}")
+                    scope_note = pace_forecast.get("scope_note")
+                    if scope_note:
+                        st.caption(scope_note)
+        else:
+            st.info(
+                "このJSONにはペース予測データが含まれていません。"
+                "予測生成側の最新版で一括レース予測を再実行し、"
+                "出力されたJSONをこのビューアに配置してください。"
+            )
+
         st.markdown("<br>", unsafe_allow_html=True)
 
         st.subheader("📊 出走馬予測ランキング")
