@@ -226,7 +226,37 @@ def render_ranking(horses):
     st.caption("スマホでは表を左右にスワイプして確認できます。")
 
 
-def render_prediction_tab(race):
+def render_prediction_tab(races_list):
+    # 競馬場・対象レースの選択UIは予測一覧のテーブル領域に配置する
+    available_venues = sorted({race["venue"] for race in races_list})
+    venue_col, race_col = st.columns([1, 2])
+    with venue_col:
+        selected_venue = st.selectbox(
+            "競馬場",
+            ["すべて"] + available_venues,
+            key="table_venue_filter",
+        )
+    filtered_races = [
+        race for race in races_list
+        if selected_venue == "すべて" or race["venue"] == selected_venue
+    ]
+    if not filtered_races:
+        st.warning("選択した競馬場のレースがありません。")
+        return None
+    race_labels = []
+    for index, item in enumerate(filtered_races):
+        race_name = safe_text(item.get("name"), "レース名不明")
+        detail = str(item.get("details", "")).split("/")[0].strip()
+        label = f'{item["venue"]}｜{race_name}｜{detail}' if detail else f'{item["venue"]}｜{race_name}'
+        race_labels.append(f"{index + 1:02d}. {label}")
+    with race_col:
+        selected_label = st.selectbox(
+            "対象レース",
+            race_labels,
+            key="table_target_race",
+        )
+    race = filtered_races[race_labels.index(selected_label)]
+    st.caption(f"表示対象：{len(filtered_races)}レース / 全{len(races_list)}レース")
     horses = sorted_horses(race)
     volatility = race.get("volatility") or {}
     top_horse = horses[0] if horses else None
@@ -260,9 +290,50 @@ def render_prediction_tab(race):
         )
     st.markdown("<br>", unsafe_allow_html=True)
 
-    render_pace_reference(race)
     st.subheader("📊 出走馬予測ランキング")
     render_ranking(horses)
+    return race
+
+
+def render_race_development_tab(race):
+    st.subheader("🏁 レース展開")
+    pace = race.get("pace_forecast")
+    if not isinstance(pace, dict):
+        st.info("このレースのペース展開データはJSONに含まれていません。")
+        return
+    st.caption("一括レースJSONに保存された展開予測を表示します。AIランキング・各馬の評価スコアには加算していません。")
+    pace_col, risk_col, coverage_col = st.columns(3)
+    with pace_col:
+        st.metric("想定ペース", safe_text(pace.get("pace"), "判定保留"))
+    with risk_col:
+        st.metric("先行争い", safe_text(pace.get("competition_risk"), "判定保留"))
+    with coverage_col:
+        coverage = pace.get("data_coverage")
+        coverage_text = f"{float(coverage):.0%}" if isinstance(coverage, (int, float)) else "不明"
+        st.metric("データ利用率", coverage_text)
+    st.write(f"**データ品質：** {safe_text(pace.get('data_quality'), '不明')}")
+    candidates = pace.get("front_runner_candidates") or []
+    if candidates:
+        st.markdown("#### 🚩 前方候補")
+        st.dataframe(
+            [
+                {
+                    "馬番": to_maru_num(candidate.get("number", "—")),
+                    "馬名": safe_text(candidate.get("name"), "不明"),
+                    "前方圧力": safe_text(candidate.get("pressure")),
+                }
+                for candidate in candidates if isinstance(candidate, dict)
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+    reasons = pace.get("reasons") or []
+    if reasons:
+        st.markdown("#### 展開判断の根拠")
+        for reason in reasons:
+            st.write(f"・{reason}")
+    if pace.get("scope_note"):
+        st.info(str(pace["scope_note"]))
 
 
 def render_horse_detail_tab(race):
@@ -345,50 +416,37 @@ if not races_list:
     st.warning("予測JSONにレースがありません。")
     st.stop()
 
-# 一括JSONの各レースに競馬場情報を付加し、ビューア側のフィルターで絞る
+# 一括JSONの各レースに競馬場情報を付加
 for race in races_list:
     race["venue"] = extract_venue(race)
 
-with st.sidebar:
-    st.markdown("### ⚙️ レース選択")
-    available_venues = sorted({race["venue"] for race in races_list})
-    venue_options = ["すべて"] + available_venues
-    selected_venue = st.selectbox("競馬場", venue_options, key="venue_filter")
-    filtered_races = [
-        race for race in races_list
-        if selected_venue == "すべて" or race["venue"] == selected_venue
-    ]
-
-    if not filtered_races:
-        st.warning("選択した競馬場のレースがありません。")
-        st.stop()
-
-    race_labels = []
-    for index, race in enumerate(filtered_races):
-        race_name = safe_text(race.get("name"), "レース名不明")
-        detail = str(race.get("details", "")).split("/")[0].strip()
-        label = f"{race['venue']}｜{race_name}｜{detail}" if detail else f"{race['venue']}｜{race_name}"
-        race_labels.append(f"{index + 1:02d}. {label}")
-
-    selected_label = st.selectbox("対象レース", race_labels, key="target_race")
-    selected_race = filtered_races[race_labels.index(selected_label)]
-    st.divider()
-    st.caption(f"読込レース数：{len(races_list)}")
-    st.caption(f"競馬場内レース数：{len(filtered_races)}")
-    st.caption("表示専用：予測・学習処理は実行しません。")
-
-# 元アプリの結果画面と同じ情報階層・タブ構成
-st.markdown('<p class="app-title">🏇 AI競馬予測結果</p>', unsafe_allow_html=True)
+st.markdown('<p class="app-title">🏇 AI競馬予測システム</p>', unsafe_allow_html=True)
+st.write("学習済みモデルによる高精度レース予測＆インサイト分析アプリ")
 st.markdown("---")
-st.success(f"🎯 {safe_text(selected_race.get('name'), 'レース名不明')}")
-details = str(selected_race.get("details", "")).replace("\n", " ")
-if details:
-    st.caption(f"📍 {details}")
 
-tab_list, tab_detail = st.tabs(["📋 予測一覧 ＆ インサイト", "🔍 個別馬・比較分析"])
+# 3部構成：一覧・展開・馬詳細
+tab_list, tab_pace, tab_detail = st.tabs([
+    "📋 AIレース予測一覧",
+    "🏁 レース展開",
+    "🔍 馬詳細",
+])
+
 with tab_list:
-    render_prediction_tab(selected_race)
-with tab_detail:
-    render_horse_detail_tab(selected_race)
+    selected_race = render_prediction_tab(races_list)
 
-st.markdown("<br>", unsafe_allow_html=True)
+with tab_pace:
+    if selected_race is not None:
+        st.success(f"🎯 {safe_text(selected_race.get('name'), 'レース名不明')}")
+        details = str(selected_race.get("details", "")).replace("\n", " ")
+        if details:
+            st.caption(f"📍 {details}")
+        render_race_development_tab(selected_race)
+    else:
+        st.info("AIレース予測一覧で競馬場と対象レースを選択してください。")
+
+with tab_detail:
+    if selected_race is not None:
+        st.success(f"🎯 {safe_text(selected_race.get('name'), 'レース名不明')}")
+        render_horse_detail_tab(selected_race)
+    else:
+        st.info("AIレース予測一覧で競馬場と対象レースを選択してください。")
