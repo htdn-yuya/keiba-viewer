@@ -404,11 +404,6 @@ def render_horse_detail_tab(race):
 
 
 json_path, races_list, load_error = load_prediction_file()
-st.markdown('<p class="app-title">🏇 AI競馬予測システム</p>', unsafe_allow_html=True)
-st.write("学習済みモデルによる高精度レース予測＆インサイト分析アプリ")
-
-if json_path:
-    st.caption(f"📁 読込データ：{json_path.name}")
 if load_error:
     st.error(load_error)
     st.stop()
@@ -419,10 +414,6 @@ if not races_list:
 # 一括JSONの各レースに競馬場情報を付加
 for race in races_list:
     race["venue"] = extract_venue(race)
-
-st.markdown('<p class="app-title">🏇 AI競馬予測システム</p>', unsafe_allow_html=True)
-st.write("学習済みモデルによる高精度レース予測＆インサイト分析アプリ")
-st.markdown("---")
 
 # 3部構成：一覧・展開・馬詳細
 tab_list, tab_pace, tab_detail = st.tabs([
