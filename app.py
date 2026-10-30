@@ -2,10 +2,10 @@ import html
 import json
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
-
-# keiba_pipeline/app.py のスマホ向け設定を踏襲
+# スマホ向けレイアウト＆ページ設定
 st.set_page_config(
     page_title="AI競馬予測システム",
     page_icon="🏇",
@@ -13,6 +13,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# スマホ向けカスタムCSS & テーブル・バッジスタイル
 st.markdown(
     """
 <style>
@@ -72,7 +73,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-RACECOURSES = ["札幌", "函館", "福島", "新潟", "東京", "中山", "中京", "京都", "阪神", "小倉"]
+RACECOURSES = [
+    "札幌",
+    "函館",
+    "福島",
+    "新潟",
+    "東京",
+    "中山",
+    "中京",
+    "京都",
+    "阪神",
+    "小倉",
+]
 
 
 def safe_text(value, default="—"):
@@ -124,11 +136,10 @@ def sorted_horses(race):
 
 
 def load_prediction_file():
-    # 既存ビューアのJSON読込優先順位を維持
-    candidates = (
-        sorted(Path(".").glob("predict_results_*.json"), reverse=True)
-        + [Path("predict_results.json"), Path("latest_prediction.json")]
-    )
+    candidates = sorted(Path(".").glob("predict_results_*.json"), reverse=True) + [
+        Path("predict_results.json"),
+        Path("latest_prediction.json"),
+    ]
     for path in candidates:
         if not path.is_file():
             continue
@@ -147,34 +158,6 @@ def load_prediction_file():
     return None, [], "予測JSONが見つかりません。"
 
 
-def render_pace_reference(race):
-    pace = race.get("pace_forecast")
-    if not isinstance(pace, dict):
-        return
-    with st.expander("🏁 ペース展開予測（参考情報）", expanded=False):
-        st.caption("ペース予測は参考情報です。AIランキング・各馬の評価スコアには加算していません。")
-        coverage = pace.get("data_coverage")
-        coverage_text = f"{float(coverage):.0%}" if isinstance(coverage, (int, float)) else "不明"
-        st.write(f"**想定ペース：** {safe_text(pace.get('pace'), '判定保留')}")
-        st.write(f"**先行争い：** {safe_text(pace.get('competition_risk'), '判定保留')}")
-        st.write(f"**データ利用率：** {coverage_text}")
-        st.write(f"**データ品質：** {safe_text(pace.get('data_quality'), '不明')}")
-        candidates = pace.get("front_runner_candidates") or []
-        if candidates:
-            st.markdown("**🚩 前方候補**")
-            for candidate in candidates:
-                if isinstance(candidate, dict):
-                    st.write(
-                        f"・{to_maru_num(candidate.get('number', '—'))}番 "
-                        f"{safe_text(candidate.get('name'), '不明')} / "
-                        f"前方圧力：{safe_text(candidate.get('pressure'))}"
-                    )
-        for reason in pace.get("reasons") or []:
-            st.write(f"・{reason}")
-        if pace.get("scope_note"):
-            st.caption(str(pace["scope_note"]))
-
-
 def render_ranking(horses):
     if not horses:
         st.warning("出走馬データがありません。")
@@ -182,11 +165,11 @@ def render_ranking(horses):
 
     table_html = (
         '<div class="mobile-table-wrap"><table class="mobile-table">'
-        '<thead><tr>'
+        "<thead><tr>"
         '<th>順位</th><th>タグ</th><th>馬番</th><th style="text-align:left">馬名</th>'
         '<th style="text-align:left">騎手</th><th>脚質</th><th>単勝</th>'
-        '<th>妙味判定</th><th>軸度</th><th>穴度</th>'
-        '</tr></thead><tbody>'
+        "<th>妙味判定</th><th>軸度</th><th>穴度</th>"
+        "</tr></thead><tbody>"
     )
     for horse in horses:
         rank = f"{esc(horse.get('rank'))}位"
@@ -208,7 +191,7 @@ def render_ranking(horses):
             myumi_badge = "-"
 
         table_html += (
-            '<tr>'
+            "<tr>"
             f'<td style="text-align:center;font-weight:bold;color:#0f172a;">{rank}</td>'
             f'<td style="text-align:center;"><span class="horse-tag">{tag}</span></td>'
             f'<td style="text-align:center;"><span class="horse-number">{num}</span></td>'
@@ -219,7 +202,7 @@ def render_ranking(horses):
             f'<td style="text-align:center;">{myumi_badge}</td>'
             f'<td style="text-align:center;color:#d97706;font-size:.75rem;">{axis}</td>'
             f'<td style="text-align:center;color:#d97706;font-size:.75rem;">{hole}</td>'
-            '</tr>'
+            "</tr>"
         )
     table_html += "</tbody></table></div>"
     st.markdown(table_html, unsafe_allow_html=True)
@@ -227,7 +210,6 @@ def render_ranking(horses):
 
 
 def render_prediction_tab(races_list):
-    # 競馬場・対象レースの選択UIは予測一覧のテーブル領域に配置する
     available_venues = sorted({race["venue"] for race in races_list})
     venue_col, race_col = st.columns([1, 2])
     with venue_col:
@@ -237,7 +219,8 @@ def render_prediction_tab(races_list):
             key="table_venue_filter",
         )
     filtered_races = [
-        race for race in races_list
+        race
+        for race in races_list
         if selected_venue == "すべて" or race["venue"] == selected_venue
     ]
     if not filtered_races:
@@ -247,7 +230,11 @@ def render_prediction_tab(races_list):
     for index, item in enumerate(filtered_races):
         race_name = safe_text(item.get("name"), "レース名不明")
         detail = str(item.get("details", "")).split("/")[0].strip()
-        label = f'{item["venue"]}｜{race_name}｜{detail}' if detail else f'{item["venue"]}｜{race_name}'
+        label = (
+            f"{item['venue']}｜{race_name}｜{detail}"
+            if detail
+            else f"{item['venue']}｜{race_name}"
+        )
         race_labels.append(f"{index + 1:02d}. {label}")
     with race_col:
         selected_label = st.selectbox(
@@ -262,7 +249,7 @@ def render_prediction_tab(races_list):
     top_horse = horses[0] if horses else None
     top_odds = top_horse.get("odds", "N/A") if top_horse else "N/A"
 
-    st.markdown("### 🧠 レースインサイト")
+    st.markdown("### 🧾 レースサマリ")
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown(
@@ -270,74 +257,161 @@ def render_prediction_tab(races_list):
             unsafe_allow_html=True,
         )
     with col2:
-        top_display = f'{esc(horse_number(top_horse))}番 ({esc(top_odds)}倍)' if top_horse else "—"
+        top_display = (
+            f"{esc(horse_number(top_horse))}番 ({esc(top_odds)}倍)"
+            if top_horse
+            else "—"
+        )
         st.markdown(
             f'<div class="metric-card"><small>本命予測1位</small><br><b>{top_display}</b></div>',
             unsafe_allow_html=True,
         )
     with col3:
-        myumi_count = sum(1 for horse in horses if "旨味" in str(horse.get("myumi_tag", "")))
+        myumi_count = sum(
+            1 for horse in horses if "旨味" in str(horse.get("myumi_tag", ""))
+        )
         st.markdown(
             f'<div class="metric-card"><small>妙味馬検知</small><br><b>{myumi_count}頭</b></div>',
             unsafe_allow_html=True,
         )
 
-    decision = volatility.get("decision") or race.get("decision_text")
-    if decision:
-        st.markdown(
-            f"<small style='color:#475569;'>💡 {esc(decision)}</small>",
-            unsafe_allow_html=True,
-        )
     st.markdown("<br>", unsafe_allow_html=True)
-
     st.subheader("📊 出走馬予測ランキング")
     render_ranking(horses)
     return race
 
 
 def render_race_development_tab(race):
-    st.subheader("🏁 レース展開")
-    pace = race.get("pace_forecast")
-    if not isinstance(pace, dict):
+    pace = race.get("pace_forecast") or {}
+    st.markdown("### 🏁 レース展開")
+    if pace:
+
+        def stars(value):
+            if value is None or pd.isna(value):
+                return "—"
+            try:
+                score = max(0, min(5, int(round(float(value) * 5))))
+                return "★" * score if score else "—"
+            except (TypeError, ValueError):
+                return "—"
+
+        pc1, pc2, pc3 = st.columns(3)
+        for col, icon, label, value in [
+            (pc1, "⏱️", "想定ペース", pace.get("pace", "判定材料不足")),
+            (pc2, "⚔️", "先行争い", pace.get("competition_risk", "不明")),
+            (
+                pc3,
+                "🚩",
+                "前方候補",
+                f"{len(pace.get('front_runner_candidates', []))}頭",
+            ),
+        ]:
+            with col:
+                with st.container(border=True):
+                    st.markdown(
+                        f'<div style="font-size:0.78rem; line-height:1.2; color:#475569; '
+                        f'font-weight:600; white-space:nowrap;">{icon} {label}</div>'
+                        f'<div style="font-size:1.02rem; line-height:1.25; font-weight:700; '
+                        f'overflow-wrap:anywhere; word-break:keep-all; margin-top:4px;">{value}</div>',
+                        unsafe_allow_html=True,
+                    )
+
+        candidates = pace.get("front_runner_candidates", [])
+        st.markdown("#### 🚀 前に行きそうな馬")
+        if candidates:
+            for candidate in candidates:
+                if isinstance(candidate, dict):
+                    mark = to_maru_num(candidate.get("number", "?"))
+                    outside = (
+                        " ↗ 外枠から前へ"
+                        if candidate.get("outside_draw_effort")
+                        else ""
+                    )
+                    st.markdown(
+                        f"{mark} **{safe_text(candidate.get('name'), '馬名不明')}**"
+                        f" 前方圧力 **{number_value(candidate.get('pressure'), 0):.2f}**{outside}"
+                    )
+        else:
+            st.write("前に行きそうな馬は、近走データから絞り込めませんでした。")
+
+        st.markdown("#### 🐎 出走馬の脚質傾向")
+        st.caption("脚質傾向＝位置取りパターン／脚質適性＝その位置取りでの好走実績。")
+
+        horses_list = sorted_horses(race)
+        style_by_number = {
+            str(horse.get("num", "")).strip(): horse.get(
+                "running_style", "判定材料不足"
+            )
+            for horse in horses_list
+        }
+        profiles = pace.get("style_profiles", [])
+        if profiles:
+            style_html = '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem; background:white; border-radius:8px; overflow:hidden;">'
+            style_html += '<thead><tr style="background:#f1f5f9; color:#334155; border-bottom:2px solid #cbd5e1;">'
+            for heading in (
+                "馬番",
+                "馬名",
+                "脚質傾向",
+                "脚質適性",
+                "序盤前方傾向",
+                "4角前方傾向",
+                "位置取り変化",
+                "近走",
+            ):
+                align = "left" if heading == "馬名" else "center"
+                style_html += f'<th style="padding:10px 6px; text-align:{align}; white-space:nowrap;">{heading}</th>'
+            style_html += "</tr></thead><tbody>"
+
+            for profile in profiles:
+                if not isinstance(profile, dict):
+                    continue
+                number = str(profile.get("horse_number", "?")).strip()
+                name = profile.get("horse_name", "馬名不明")
+                running_style = style_by_number.get(
+                    number,
+                    profile.get("running_style") or "判定材料不足",
+                )
+                early = stars(profile.get("early_front_rate"))
+                late = stars(profile.get("late_front_rate"))
+                versatile = stars(profile.get("versatility"))
+                starts = profile.get("starts", 0)
+
+                horse_badge = f'<span class="horse-number">{number}</span>'
+                style_badge = f'<span class="style-badge">{running_style}</span>'
+                aptitude = profile.get("aptitude_label", "判定材料不足")
+                evaluated = int(profile.get("evaluated_starts", 0) or 0)
+                good = int(profile.get("good_finish_starts", 0) or 0)
+                aptitude_text = (
+                    f"{aptitude}（好走{good}/{evaluated}）" if evaluated else aptitude
+                )
+                aptitude_badge = (
+                    f'<span style="display:inline-block; padding:2px 5px; border-radius:4px; '
+                    f'font-size:0.7rem; background:#f1f5f9; color:#334155;">'
+                    f"{aptitude_text}</span>"
+                )
+                star_style = 'style="text-align:center; color:#d97706; white-space:nowrap; font-size:0.75rem; letter-spacing:0.02em;"'
+
+                style_html += '<tr style="border-bottom:1px solid #e2e8f0;">'
+                style_html += f'<td style="padding:8px 4px; text-align:center; white-space:nowrap;">{horse_badge}</td>'
+                style_html += f'<td style="padding:8px 4px; text-align:left; font-weight:bold; color:#0f172a; white-space:nowrap;">{name}</td>'
+                style_html += f'<td style="padding:8px 4px; text-align:center; white-space:nowrap;">{style_badge}</td>'
+                style_html += f'<td style="padding:8px 4px; text-align:center; white-space:nowrap;">{aptitude_badge}</td>'
+                style_html += f"<td {star_style}>{early}</td>"
+                style_html += f"<td {star_style}>{late}</td>"
+                style_html += f"<td {star_style}>{versatile}</td>"
+                style_html += f'<td style="padding:8px 4px; text-align:center; color:#475569; white-space:nowrap;">{starts}走</td>'
+                style_html += "</tr>"
+
+            style_html += "</tbody></table></div>"
+            st.markdown(style_html, unsafe_allow_html=True)
+        else:
+            st.info("詳細な脚質プロファイルデータがありません。")
+    else:
         st.info("このレースのペース展開データはJSONに含まれていません。")
-        return
-    st.caption("一括レースJSONに保存された展開予測を表示します。AIランキング・各馬の評価スコアには加算していません。")
-    pace_col, risk_col, coverage_col = st.columns(3)
-    with pace_col:
-        st.metric("想定ペース", safe_text(pace.get("pace"), "判定保留"))
-    with risk_col:
-        st.metric("先行争い", safe_text(pace.get("competition_risk"), "判定保留"))
-    with coverage_col:
-        coverage = pace.get("data_coverage")
-        coverage_text = f"{float(coverage):.0%}" if isinstance(coverage, (int, float)) else "不明"
-        st.metric("データ利用率", coverage_text)
-    st.write(f"**データ品質：** {safe_text(pace.get('data_quality'), '不明')}")
-    candidates = pace.get("front_runner_candidates") or []
-    if candidates:
-        st.markdown("#### 🚩 前方候補")
-        st.dataframe(
-            [
-                {
-                    "馬番": to_maru_num(candidate.get("number", "—")),
-                    "馬名": safe_text(candidate.get("name"), "不明"),
-                    "前方圧力": safe_text(candidate.get("pressure")),
-                }
-                for candidate in candidates if isinstance(candidate, dict)
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
-    reasons = pace.get("reasons") or []
-    if reasons:
-        st.markdown("#### 展開判断の根拠")
-        for reason in reasons:
-            st.write(f"・{reason}")
-    if pace.get("scope_note"):
-        st.info(str(pace["scope_note"]))
 
 
 def render_horse_detail_tab(race):
-    st.subheader("🔍 個別馬の詳細分析・要因比較")
+    st.subheader("🐎 馬詳細・スコア内訳")
     st.markdown(
         "<small style='color:#64748b;'>選択した馬のAI評価スコアの内訳（基準点・加点・減点合計）とシグナルを詳細に確認できます。</small>",
         unsafe_allow_html=True,
@@ -350,60 +424,71 @@ def render_horse_detail_tab(race):
         return
 
     horse_options = [
-        f"{horse.get('rank', '—')}位: {to_maru_num(horse_number(horse))}番 "
-        f"{safe_text(horse.get('name'), '不明')} "
-        f"({horse.get('tag') if horse.get('tag') else '一般'})"
+        f"{horse.get('rank', '—')}位: {horse_number(horse)}番 {safe_text(horse.get('name'), '不明')} ({horse.get('tag') if horse.get('tag') else '一般'})"
         for horse in horses
     ]
-    selected_horse_str = st.selectbox("詳細を確認する馬を選択", horse_options, key="detail_horse")
-    horse = horses[horse_options.index(selected_horse_str)]
+    selected_horse_str = st.selectbox(
+        "詳細を確認する馬を選択", horse_options, key="detail_horse"
+    )
 
-    base_val = horse.get("base_score", 0.0)
-    plus_val = horse.get("plus_sum", 0.0)
-    minus_val = horse.get("minus_sum", 0.0)
-    raw_val = horse.get("raw_score", 0.0)
-    pace_adv = horse.get("pace_adv", 0.0)
-    track_adv = horse.get("track_adv", 0.0)
-    prev_day_adv = horse.get("prev_day_adv", 0.0)
-    bias_sum = horse.get("bias_sum", 0.0)
-    myumi_display = f"/ 判定: {horse['myumi_tag']}" if horse.get("myumi_tag") else ""
-    reasons = horse.get("reasons") or "特筆すべき特記事項なし"
-    if isinstance(reasons, list):
-        reasons = "<br>".join(esc(reason) for reason in reasons)
-    else:
-        reasons = esc(reasons)
+    if selected_horse_str:
+        selected_idx = horse_options.index(selected_horse_str)
+        h = horses[selected_idx]
 
-    st.markdown(
-        f"""<div class="horse-detail-box">
-<h4 style="margin:0; color:#0f766e;">{to_maru_num(horse_number(horse))}番 {esc(horse.get("name"), "不明")} <span style="font-size:0.9rem; color:#475569;">({esc(horse.get("rank"))}位)</span></h4>
+        base_val = number_value(h.get("base_score"), 0.0)
+        plus_val = number_value(h.get("plus_sum"), 0.0)
+        minus_val = number_value(h.get("minus_sum"), 0.0)
+        raw_val = number_value(h.get("raw_score"), 0.0)
+        pace_adv = number_value(h.get("pace_adv"), 0.0)
+        track_adv = number_value(h.get("track_adv"), 0.0)
+        prev_day_adv = number_value(h.get("prev_day_adv"), 0.0)
+        bias_sum = number_value(h.get("bias_sum"), 0.0)
+        myumi_display = f"/ 判定: {h['myumi_tag']}" if h.get("myumi_tag") else ""
+
+        reasons = h.get("reasons", "特筆すべき特記事項なし")
+        if isinstance(reasons, list):
+            reasons = "<br>".join(esc(r) for r in reasons)
+        else:
+            reasons = esc(reasons)
+
+        st.markdown(
+            f"""<div class="horse-detail-box">
+<h4 style="margin:0; color:#0f766e;">{horse_number(h)}番 {esc(h.get("name"), "不明")} <span style="font-size:0.9rem; color:#475569;">({esc(h.get("rank"))}位)</span></h4>
 <hr style="margin:8px 0; border:0; border-top:1px solid #e2e8f0;">
-<b>🏷️ タグ:</b> {esc(horse.get("tag"), "特になし")}<br>
-<b>🏇 騎手 / 脚質:</b> {esc(horse.get("jockey"))} / {esc(horse.get("running_style"))}<br>
-<b>💰 単勝オッズ:</b> {esc(horse.get("odds"), "N/A")}倍 {html.escape(myumi_display)}<br><br>
+<b>🏷️ タグ:</b> {esc(h.get("tag"), "特になし")}<br>
+<b>🏇 騎手 / 脚質:</b> {esc(h.get("jockey"))} / {esc(h.get("running_style"))}<br>
+<b>💰 単勝オッズ:</b> {esc(h.get("odds"), "N/A")}倍 {html.escape(myumi_display)}<br><br>
 <b>📊 AI総合評価スコアの内訳:</b><br>
 <div style="background:#f1f5f9; padding:10px; border-radius:6px; font-size:0.85rem; color:#1e293b; margin-top:4px;">
-<b>• 基準点（スタートライン）:</b> {float(base_val):+.2f}<br>
-<b>• 📈 加点合計（強みの積み上げ）:</b> <span style="color:#047857; font-weight:bold;">{float(plus_val):+.2f}</span><br>
-<b>• 📉 減点合計（懸念・リスク）:</b> <span style="color:#b91c1c; font-weight:bold;">{float(minus_val):+.2f}</span><br>
-<b>• 🧩 後付けバイアス補正合計:</b> <span style="color:#2563eb; font-weight:bold;">{float(bias_sum):+.2f}</span><br>
+<b>• 基準点（スタートライン）:</b> {base_val:+.2f}<br>
+<b>• 📈 加点合計（強みの積み上げ）:</b> <span style="color:#047857; font-weight:bold;">{plus_val:+.2f}</span><br>
+<b>• 📉 減点合計（懸念・リスク）:</b> <span style="color:#b91c1c; font-weight:bold;">{minus_val:+.2f}</span><br>
+<b>• 🧩 後付けバイアス補正合計:</b> <span style="color:#2563eb; font-weight:bold;">{bias_sum:+.2f}</span><br>
 <div style="font-size:0.8rem; color:#475569; padding-left:12px; margin-top:2px;">
-- ペース展開補正: {float(pace_adv):+.2f}<br>
-- 当日馬場バイアス: {float(track_adv):+.2f}<br>
-- 前日傾向補正: {float(prev_day_adv):+.2f}
+- ペース展開補正: {pace_adv:+.2f}<br>
+- 当日馬場バイアス: {track_adv:+.2f}<br>
+- 前日傾向補正: {prev_day_adv:+.2f}
 </div>
 <hr style="margin:6px 0; border:0; border-top:1px dashed #cbd5e1;">
-<b>🎯 最終トータルスコア: {float(raw_val):+.2f}</b>
+<b>🎯 最終トータルスコア: {raw_val:+.2f}</b>
 </div><br>
 <b>📈 要因分析・モデル寄与度の詳細:</b><br>
 <div style="background:#f8fafc; padding:8px; border-radius:6px; font-size:0.85rem; color:#334155; margin-top:4px;">
 {reasons}
 </div>
 </div>""",
-        unsafe_allow_html=True,
-    )
+            unsafe_allow_html=True,
+        )
 
 
+# メイン処理
 json_path, races_list, load_error = load_prediction_file()
+
+st.markdown('<p class="app-title">🏇 AI競馬予測システム</p>', unsafe_allow_html=True)
+st.write("学習済みモデルによる高精度レース予測＆インサイト分析アプリ")
+
+if json_path:
+    st.caption(f"📁 読込データ：{json_path.name}")
 if load_error:
     st.error(load_error)
     st.stop()
@@ -411,16 +496,16 @@ if not races_list:
     st.warning("予測JSONにレースがありません。")
     st.stop()
 
-# 一括JSONの各レースに競馬場情報を付加
+# 各レースに競馬場情報を付加
 for race in races_list:
     race["venue"] = extract_venue(race)
 
-# 3部構成：一覧・展開・馬詳細
-tab_list, tab_pace, tab_detail = st.tabs([
-    "📋 AIレース予測一覧",
-    "🏁 レース展開",
-    "🔍 馬詳細",
-])
+st.markdown("---")
+
+# タブ切り替え（「📋 AI予測一覧」 / 「🏁 レース展開」 / 「🐎 馬詳細」）
+tab_list, tab_pace, tab_detail = st.tabs(
+    ["📋 AI予測一覧", "🏁 レース展開", "🐎 馬詳細"]
+)
 
 with tab_list:
     selected_race = render_prediction_tab(races_list)
@@ -433,11 +518,11 @@ with tab_pace:
             st.caption(f"📍 {details}")
         render_race_development_tab(selected_race)
     else:
-        st.info("AIレース予測一覧で競馬場と対象レースを選択してください。")
+        st.info("AI予測一覧で競馬場と対象レースを選択してください。")
 
 with tab_detail:
     if selected_race is not None:
         st.success(f"🎯 {safe_text(selected_race.get('name'), 'レース名不明')}")
         render_horse_detail_tab(selected_race)
     else:
-        st.info("AIレース予測一覧で競馬場と対象レースを選択してください。")
+        st.info("AI予測一覧で競馬場と対象レースを選択してください。")
