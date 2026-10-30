@@ -62,9 +62,12 @@ def extract_venue(details_text):
     return "その他"
 
 
-# JSONデータのパス設定（latest_prediction.json または predict_results系を自動探索）
-json_files = ["latest_prediction.json"] + sorted(
-    [str(p) for p in Path(".").glob("predict_results_*.json")], reverse=True
+# JSONデータのパス設定
+# 一括予測スクリプトの標準出力 predict_results.json を優先し、
+# 日付付きファイルがあれば最新日付のものを先に読む。
+json_files = (
+    sorted([str(p) for p in Path(".").glob("predict_results_*.json")], reverse=True)
+    + ["predict_results.json", "latest_prediction.json"]
 )
 json_path = None
 for f in json_files:
