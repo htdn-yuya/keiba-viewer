@@ -445,11 +445,12 @@ def render_horse_detail_tab(race):
         bias_sum = number_value(h.get("bias_sum"), 0.0)
         myumi_display = f"/ 判定: {h['myumi_tag']}" if h.get("myumi_tag") else ""
 
-        reasons = h.get("reasons", "特筆すべき特記事項なし")
-        if isinstance(reasons, list):
-            reasons = "<br>".join(esc(r) for r in reasons)
+        # reasons がリストの場合や文字列の場合でそのままHTML構造を生かすように処理
+        reasons_raw = h.get("reasons", "特筆すべき特記事項なし")
+        if isinstance(reasons_raw, list):
+            reasons_html = "<br>".join(reasons_raw)
         else:
-            reasons = esc(reasons)
+            reasons_html = str(reasons_raw)
 
         st.markdown(
             f"""<div class="horse-detail-box">
@@ -457,7 +458,7 @@ def render_horse_detail_tab(race):
 <hr style="margin:8px 0; border:0; border-top:1px solid #e2e8f0;">
 <b>🏷️ タグ:</b> {esc(h.get("tag"), "特になし")}<br>
 <b>🏇 騎手 / 脚質:</b> {esc(h.get("jockey"))} / {esc(h.get("running_style"))}<br>
-<b>💰 単勝オッズ:</b> {esc(h.get("odds"), "N/A")}倍 {html.escape(myumi_display)}<br><br>
+<b>💰 単勝オッズ:</b> {esc(h.get("odds"), "N/A")}倍 {esc(myumi_display)}<br><br>
 <b>📊 AI総合評価スコアの内訳:</b><br>
 <div style="background:#f1f5f9; padding:10px; border-radius:6px; font-size:0.85rem; color:#1e293b; margin-top:4px;">
 <b>• 基準点（スタートライン）:</b> {base_val:+.2f}<br>
@@ -474,7 +475,7 @@ def render_horse_detail_tab(race):
 </div><br>
 <b>📈 要因分析・モデル寄与度の詳細:</b><br>
 <div style="background:#f8fafc; padding:8px; border-radius:6px; font-size:0.85rem; color:#334155; margin-top:4px;">
-{reasons}
+{reasons_html}
 </div>
 </div>""",
             unsafe_allow_html=True,
