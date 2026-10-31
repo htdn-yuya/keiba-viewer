@@ -244,19 +244,21 @@ def render_prediction_tab(races_list):
         )
     race = filtered_races[race_labels.index(selected_label)]
     st.caption(f"表示対象：{len(filtered_races)}レース / 全{len(races_list)}レース")
+
+    # 🎯 レース名と 📍 条件（詳細）の表示
+    st.success(f"🎯 {safe_text(race.get('name'), 'レース名不明')}")
+    details = str(race.get("details", "")).replace("\n", " ")
+    if details:
+        st.caption(f"📍 {details}")
+
     horses = sorted_horses(race)
-    volatility = race.get("volatility") or {}
     top_horse = horses[0] if horses else None
     top_odds = top_horse.get("odds", "N/A") if top_horse else "N/A"
 
     st.markdown("### 🧾 レースサマリ")
-    col1, col2, col3 = st.columns(3)
+    # レース性質を削除し、2列構成に変更
+    col1, col2 = st.columns(2)
     with col1:
-        st.markdown(
-            f'<div class="metric-card"><small>レース性質</small><br><b>{esc(volatility.get("label"), "未判定")}</b></div>',
-            unsafe_allow_html=True,
-        )
-    with col2:
         top_display = (
             f"{esc(horse_number(top_horse))}番 ({esc(top_odds)}倍)"
             if top_horse
@@ -266,7 +268,7 @@ def render_prediction_tab(races_list):
             f'<div class="metric-card"><small>本命予測1位</small><br><b>{top_display}</b></div>',
             unsafe_allow_html=True,
         )
-    with col3:
+    with col2:
         myumi_count = sum(
             1 for horse in horses if "旨味" in str(horse.get("myumi_tag", ""))
         )
@@ -445,7 +447,6 @@ def render_horse_detail_tab(race):
         bias_sum = number_value(h.get("bias_sum"), 0.0)
         myumi_display = f"/ 判定: {h['myumi_tag']}" if h.get("myumi_tag") else ""
 
-        # reasons がリストの場合や文字列の場合でそのままHTML構造を生かすように処理
         reasons_raw = h.get("reasons", "特筆すべき特記事項なし")
         if isinstance(reasons_raw, list):
             reasons_html = "<br>".join(reasons_raw)
