@@ -76,13 +76,20 @@ def format_rank_emoji(rank_str: str, score: float) -> str:
 
 
 def assign_evaluations(horses_list):
-    """各出走馬に地力評価、条件適性、メイン評価バッジを付与"""
+    """検証レポートのトータルスコア帯実績に基づいた自動評価判定"""
     for idx, h in enumerate(horses_list, start=1):
         rank = h.get("rank", idx)
         base_val = float(h.get("base_score", 0.0) or 0.0)
         plus_val = float(h.get("plus_sum", 0.0) or 0.0)
         minus_val = float(h.get("minus_sum", 0.0) or 0.0)
         cond_val = plus_val + minus_val
+        total_val = base_val + cond_val  # 最終トータルスコア
+
+        # オッズの数値化（危険馬判定用）
+        try:
+            odds_val = float(h.get("odds", 99.9))
+        except (ValueError, TypeError):
+            odds_val = 99.9
 
         b_rank = get_base_rank(base_val)
         c_rank = get_cond_rank(cond_val)
@@ -92,15 +99,26 @@ def assign_evaluations(horses_list):
         h["base_display"] = format_rank_emoji(b_rank, base_val)
         h["cond_display"] = format_rank_emoji(c_rank, cond_val)
 
+        # JSON側に既存のタグがあれば優先、なければトータルスコアから判定
         badge = h.get("main_badge") or h.get("tag")
         if not badge or badge == "—":
             badge = "—"
-            if rank == 1 and b_rank in ["S", "A"] and c_rank in ["S", "A"]:
-                badge = "🎯 鉄板軸"
-            elif rank in [2, 3, 4, 5] and b_rank in ["C", "D"] and c_rank == "S":
-                badge = "🚀 条件穴"
-            elif b_rank in ["S", "A"] and c_rank == "D":
+
+            # 1. 危険馬判定：トータルスコアがワースト帯（-0.43以下）なのに人気（単勝15倍未満）の場合
+            if total_val <= -0.43 and odds_val < 15.0:
                 badge = "⚠️ 危険馬"
+            # 2. 鉄板軸：予測1位かつトータルスコアが最上位帯（0.28超え）
+            elif rank == 1 and total_val > 0.56:
+                badge = "🎯 鉄板軸"
+            # 3. 本命軸：予測1位でトータルスコアがプラス
+            elif rank <= 4 and total_val > 0.28:
+                badge = "👑 本命軸"
+            # 4. 条件穴：中位以下なのにトータルスコアがプラス、または条件適性が高い馬
+            elif rank >= 4 and (total_val >= 0.0 or cond_val >= 0.40):
+                badge = "🚀 条件穴"
+            # 5. 有力相手：2〜3位でトータルスコアがマイナス幅の小さい安定馬
+            elif rank <= 4 and total_val > 0.0:
+                badge = "🛡️ 相手軸"
 
         h["main_badge"] = badge
     return horses_list
