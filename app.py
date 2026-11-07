@@ -76,20 +76,27 @@ def format_rank_emoji(rank_str: str, score: float) -> str:
 
 
 def assign_evaluations(horses_list):
-    """検証レポートのトータルスコア帯実績に基づいた自動評価判定"""
+    """地力・条件スコアとモデル指標に基づいてメイン評価バッジを判定する。"""
     for idx, h in enumerate(horses_list, start=1):
         rank = h.get("rank", idx)
         base_val = float(h.get("base_score", 0.0) or 0.0)
         plus_val = float(h.get("plus_sum", 0.0) or 0.0)
         minus_val = float(h.get("minus_sum", 0.0) or 0.0)
         cond_val = plus_val + minus_val
-        total_val = base_val + cond_val  # 最終トータルスコア
 
-        # オッズの数値化（危険馬判定用）
         try:
-            odds_val = float(h.get("odds", 99.9))
+            burst_val = float(h.get("burst_score", 0.0) or 0.0)
         except (ValueError, TypeError):
-            odds_val = 99.9
+            burst_val = 0.0
+        try:
+            weak_risk_raw = h.get("weak_risk_score")
+            weak_risk_val = (
+                1.0
+                if weak_risk_raw is None or weak_risk_raw == ""
+                else float(weak_risk_raw)
+            )
+        except (ValueError, TypeError):
+            weak_risk_val = 1.0
 
         b_rank = get_base_rank(base_val)
         c_rank = get_cond_rank(cond_val)
@@ -99,26 +106,28 @@ def assign_evaluations(horses_list):
         h["base_display"] = format_rank_emoji(b_rank, base_val)
         h["cond_display"] = format_rank_emoji(c_rank, cond_val)
 
-        # JSON側に既存のタグがあれば優先、なければトータルスコアから判定
+        # JSON側に既存のタグがあれば優先、なければ新ロジックから判定
         badge = h.get("main_badge") or h.get("tag")
         if not badge or badge == "—":
             badge = "—"
 
-            # 1. 危険馬判定：トータルスコアがワースト帯（-0.43以下）なのに人気（単勝15倍未満）の場合
-            if total_val <= -0.43 and odds_val < 15.0:
-                badge = "⚠️ 危険馬"
-            # 2. 鉄板軸：予測1位かつトータルスコアが最上位帯（0.28超え）
-            elif rank == 1 and total_val > 0.56:
+            total_val = base_val + cond_val
+
+            # 1. 鉄板軸：予測1位かつトータルスコアが最上位帯
+            if rank == 1 and total_val > 0.56:
                 badge = "🎯 鉄板軸"
-            # 3. 本命軸：予測1位でトータルスコアがプラス
-            elif rank <= 4 and total_val > 0.28:
+            # 2. 本命軸：上位（4位以内）でトータルスコアがプラス
+            elif rank < 4 and total_val > 0.28:
                 badge = "👑 本命軸"
-            # 4. 条件穴：中位以下なのにトータルスコアがプラス、または条件適性が高い馬
-            elif rank >= 4 and (total_val >= 0.0 or cond_val >= 0.40):
-                badge = "🚀 条件穴"
-            # 5. 有力相手：2〜3位でトータルスコアがマイナス幅の小さい安定馬
-            elif rank <= 4 and total_val > 0.0:
+            # 3. 相手軸：上位（4位以内）でトータルスコアがプラス
+            elif rank < 4 and total_val > 0.0:
                 badge = "🛡️ 相手軸"
+            # 4. バースト穴：中位以下でバースト力が高い、またはリスクが低い
+            elif rank >= 4 and (burst_val >= 0.10 or weak_risk_val <= 0.35):
+                badge = "🚀 バースト穴"
+            # 5. 地力穴：中位以下で地力スコアがS/A相当
+            elif rank >= 4 and base_val >= 0.00:
+                badge = "💎 地力穴"
 
         h["main_badge"] = badge
     return horses_list
