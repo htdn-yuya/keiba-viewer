@@ -155,8 +155,16 @@ html_template = f"""<!DOCTYPE html>
     function getRaceNum(race, idx) {{
       if (race && race.race_num) return race.race_num;
       if (race && race.race_no) return race.race_no;
+      if (race && race.race_id && String(race.race_id).length >= 2) {{
+        const lastTwo = parseInt(String(race.race_id).slice(-2), 10);
+        if (!isNaN(lastTwo) && lastTwo >= 1 && lastTwo <= 12) return lastTwo;
+      }}
+      if (race && race.id && String(race.id).length >= 2) {{
+        const lastTwo = parseInt(String(race.id).slice(-2), 10);
+        if (!isNaN(lastTwo) && lastTwo >= 1 && lastTwo <= 12) return lastTwo;
+      }}
       if (idx !== undefined && idx !== null) return idx + 1;
-      return race && race.id ? (((parseInt(race.id, 10) - 1) % 12) + 1) : 1;
+      return 1;
     }}
 
     // SABCDランクの色・絵文字装飾関数
@@ -230,9 +238,19 @@ html_template = f"""<!DOCTYPE html>
 
       const raceNum = getRaceNum(race, currentRaceIdx);
       const singleDetails = (race.details || "").replace(/\\s+/g, ' ');
+      const vol = race.volatility || {{}};
+      const volLabel = vol.label || "🟡 混戦";
+      const volDecision = vol.decision || "";
+      const volReason = vol.reason || "";
+      const volBg = volLabel.includes("堅軸") ? "#f0fdf4" : (volLabel.includes("波乱") ? "#fef2f2" : "#fffbeb");
+      const volBorder = volLabel.includes("堅軸") ? "#bbf7d0" : (volLabel.includes("波乱") ? "#fecaca" : "#fde68a");
       document.getElementById("race-info").innerHTML = `
         <h3>${{raceNum}}R: ${{race.name}}</h3>
         <p style="font-size:0.85rem; color:#64748b; margin-top:4px;">📍 ${{singleDetails}}</p>
+        <div style="background:${{volBg}}; border:1px solid ${{volBorder}}; border-radius:8px; padding:8px 12px; margin-top:8px;">
+          <b style="font-size:0.9rem;">${{volLabel}}</b> <span style="font-size:0.8rem; color:#475569;">(${{volDecision}})</span><br>
+          <small style="color:#64748b;">💡 ${{volReason}}</small>
+        </div>
       `;
 
       const horses = race.horses || [];
@@ -246,7 +264,7 @@ html_template = f"""<!DOCTYPE html>
                   <td><b>${{h.rank}}位</b></td>
                   <td><span class="badge ${{getBadgeClass(h.main_badge||'—')}}">${{h.main_badge||'—'}}</span></td>
                   <td><span class="num-circle">${{h.num}}</span></td>
-                  <td class="left"><b>${{h.name}}</b></td>
+                  <td class="left"><b>${{h.name}}</b>${{(h.one_change_signals || []).length ? ' ⚡' : ''}}</td>
                   <td class="left" style="color:#64748b;">${{h.jockey}}</td>
                   <td><span style="background:#e2e8f0; padding:2px 5px; border-radius:4px; font-size:0.75rem;">${{h.running_style}}</span></td>
                   <td style="color:var(--primary); font-weight:bold;">${{h.odds}}倍</td>
