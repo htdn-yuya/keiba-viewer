@@ -151,6 +151,14 @@ html_template = f"""<!DOCTYPE html>
       return m ? m[1].trim() : "その他";
     }}
 
+    // 会場ごとの正しいレース番号（1R〜12R）を取得
+    function getRaceNum(race, idx) {{
+      if (race && race.race_num) return race.race_num;
+      if (race && race.race_no) return race.race_no;
+      if (idx !== undefined && idx !== null) return idx + 1;
+      return race && race.id ? (((parseInt(race.id, 10) - 1) % 12) + 1) : 1;
+    }}
+
     // SABCDランクの色・絵文字装飾関数
     function formatRank(rank, score) {{
       const colors = {{
@@ -187,7 +195,7 @@ html_template = f"""<!DOCTYPE html>
     function renderRaceTabs() {{
       const tabsEl = document.getElementById("race-tabs");
       tabsEl.innerHTML = currentRaces.map((r, i) => `
-        <button class="r-btn ${{i === currentRaceIdx ? 'active' : ''}}" onclick="selectRace(${{i}})">${{r.id || (i+1)}}R</button>
+        <button class="r-btn ${{i === currentRaceIdx ? 'active' : ''}}" onclick="selectRace(${{i}})">${{getRaceNum(r, i)}}R</button>
       `).join("");
     }}
 
@@ -220,9 +228,10 @@ html_template = f"""<!DOCTYPE html>
       const race = currentRaces[currentRaceIdx];
       if (!race) return;
 
+      const raceNum = getRaceNum(race, currentRaceIdx);
       const singleDetails = (race.details || "").replace(/\\s+/g, ' ');
       document.getElementById("race-info").innerHTML = `
-        <h3>${{race.id || ''}}R: ${{race.name}}</h3>
+        <h3>${{raceNum}}R: ${{race.name}}</h3>
         <p style="font-size:0.85rem; color:#64748b; margin-top:4px;">📍 ${{singleDetails}}</p>
       `;
 
