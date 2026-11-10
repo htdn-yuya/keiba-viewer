@@ -105,13 +105,11 @@ html_template = f"""<!DOCTYPE html>
     <div class="box" id="race-info" style="margin-bottom:12px;"></div>
 
     <div class="sub-tabs">
-      <button class="sub-btn active" onclick="switchSubTab('list')">📋 AI予測一覧</button>
-      <button class="sub-btn" onclick="switchSubTab('pace')">🏁 レース展開</button>
+      <button class="sub-btn active" onclick="switchSubTab('list')">📋 能力指数＆展開予測シート</button>
       <button class="sub-btn" onclick="switchSubTab('detail')">🐎 馬詳細</button>
     </div>
 
     <div id="view-list" class="tab-content"></div>
-    <div id="view-pace" class="tab-content" style="display:none;"></div>
     <div id="view-detail" class="tab-content" style="display:none;"></div>
   </div>
 
@@ -216,11 +214,20 @@ html_template = f"""<!DOCTYPE html>
     function switchSubTab(tab) {{
       currentSubTab = tab;
       document.querySelectorAll(".sub-btn").forEach((b, i) => {{
-        b.classList.toggle("active", ["list", "pace", "detail"][i] === tab);
+        b.classList.toggle("active", ["list", "detail"][i] === tab);
       }});
       document.getElementById("view-list").style.display = tab === "list" ? "block" : "none";
-      document.getElementById("view-pace").style.display = tab === "pace" ? "block" : "none";
       document.getElementById("view-detail").style.display = tab === "detail" ? "block" : "none";
+    }}
+
+    function formatSignalIcons(signals) {{
+      if (!signals || !signals.length) return "";
+      const items = signals.map(s => {{
+        const str = String(s).trim();
+        const icon = str.split(/\\s+/)[0] || str;
+        return `<span title="${{str}}" style="display:inline-block; padding:1px 5px; margin-left:3px; border-radius:4px; background:#e0f2fe; border:1px solid #bae6fd; font-size:0.75rem; cursor:help;">${{icon}}</span>`;
+      }});
+      return items.join("");
     }}
 
     function getBadgeClass(badge) {{
@@ -254,45 +261,55 @@ html_template = f"""<!DOCTYPE html>
       `;
 
       const horses = race.horses || [];
-      document.getElementById("view-list").innerHTML = `
-        <div class="tbl-wrap">
-          <table>
-            <thead><tr><th>順位</th><th>評価</th><th>馬番</th><th class="left">馬名</th><th class="left">騎手</th><th>脚質</th><th>単勝</th><th>地力</th><th>適性</th></tr></thead>
-            <tbody>
-              ${{horses.map(h => `
-                <tr>
-                  <td><b>${{h.rank}}位</b></td>
-                  <td><span class="badge ${{getBadgeClass(h.main_badge||'—')}}">${{h.main_badge||'—'}}</span></td>
-                  <td><span class="num-circle">${{h.num}}</span></td>
-                  <td class="left"><b>${{h.name}}</b>${{(h.one_change_signals || []).length ? ' ⚡' : ''}}</td>
-                  <td class="left" style="color:#64748b;">${{h.jockey}}</td>
-                  <td><span style="background:#e2e8f0; padding:2px 5px; border-radius:4px; font-size:0.75rem;">${{h.running_style}}</span></td>
-                  <td style="color:var(--primary); font-weight:bold;">${{h.odds}}倍</td>
-                  <td>${{formatRank(h.base_rank, h.base_score)}}</td>
-                  <td>${{formatRank(h.cond_rank, parseFloat(h.plus_sum||0)+parseFloat(h.minus_sum||0))}}</td>
-                </tr>
-              `).join('')}}
-            </tbody>
-          </table>
-        </div>
-      `;
-
       const pace = race.pace_forecast || {{}};
       const cands = pace.front_runner_candidates || [];
-      document.getElementById("view-pace").innerHTML = `
-        <div class="metric-grid">
+      const profiles = pace.style_profiles || [];
+      const aptByNum = {{}};
+      profiles.forEach(p => {{
+        const k = String(p.horse_number || p.number || p.num || "");
+        if (k) aptByNum[k] = p.aptitude_label || "—";
+      }});
+
+      const candsHtml = cands.length ? cands.map(c => `
+        <span style="display:inline-flex; align-items:center; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:3px 8px; margin:2px 4px 2px 0; font-size:0.8rem;">
+          <span class="num-circle" style="width:18px; height:18px; font-size:0.68rem; margin-right:4px;">${{c.number}}</span>
+          <b>${{c.name}}</b> <small style="color:#64748b; margin-left:4px;">(圧力:${{Number(c.pressure||0).toFixed(2)}})${{c.outside_draw_effort ? ' ↗️外' : ''}}</small>
+        </span>
+      `).join('') : '<span style="color:#94a3b8; font-size:0.82rem;">前方候補なし（またはデータ不足）</span>';
+
+      document.getElementById("view-list").innerHTML = `
+        <div class="metric-grid" style="margin-bottom:10px;">
           <div class="metric-card"><small>⏱️ 想定ペース</small><br><b>${{pace.pace || '不明'}}</b></div>
           <div class="metric-card"><small>⚔️ 先行争い</small><br><b>${{pace.competition_risk || '不明'}}</b></div>
           <div class="metric-card"><small>🚩 前方候補</small><br><b>${{pace.candidate_count || 0}}頭</b></div>
         </div>
-        <div class="box">
-          <h4 style="margin-bottom:8px;">🚀 展開を引っ張る注目馬</h4>
-          ${{cands.length ? cands.map(c => `
-            <div style="margin-bottom:6px;">
-              <span class="num-circle" style="width:20px; height:20px; font-size:0.7rem;">${{c.number}}</span>
-              <b>${{c.name}}</b> <small style="color:#64748b;">(圧力: ${{c.pressure}})</small>
-            </div>
-          `).join('') : '<p style="color:#94a3b8; font-size:0.85rem;">候補なし</p>'}}
+        <div class="box" style="padding:10px 12px; margin-bottom:12px;">
+          <div style="font-size:0.82rem; font-weight:bold; color:#334155; margin-bottom:6px;">🚀 展開を引っ張る注目馬</div>
+          <div>${{candsHtml}}</div>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>順位</th><th>評価</th><th>馬番</th><th class="left">馬名 / 特筆</th><th class="left">騎手</th><th>脚質</th><th>位置適性</th><th>単勝</th><th>地力</th><th>適性</th></tr></thead>
+            <tbody>
+              ${{horses.map(h => {{
+                const apt = h.aptitude_label || aptByNum[String(h.num)] || '—';
+                return `
+                <tr>
+                  <td><b>${{h.rank}}位</b></td>
+                  <td><span class="badge ${{getBadgeClass(h.main_badge||'—')}}">${{h.main_badge||'—'}}</span></td>
+                  <td><span class="num-circle">${{h.num}}</span></td>
+                  <td class="left"><b>${{h.name}}</b>${{formatSignalIcons(h.one_change_signals)}}</td>
+                  <td class="left" style="color:#64748b;">${{h.jockey}}</td>
+                  <td><span style="background:#e2e8f0; padding:2px 5px; border-radius:4px; font-size:0.75rem;">${{h.running_style}}</span></td>
+                  <td style="font-size:0.78rem; color:#475569;">${{apt}}</td>
+                  <td style="color:var(--primary); font-weight:bold;">${{h.odds}}倍</td>
+                  <td>${{formatRank(h.base_rank, h.base_score)}}</td>
+                  <td>${{formatRank(h.cond_rank, parseFloat(h.plus_sum||0)+parseFloat(h.minus_sum||0))}}</td>
+                </tr>
+              `;
+              }}).join('')}}
+            </tbody>
+          </table>
         </div>
       `;
 
