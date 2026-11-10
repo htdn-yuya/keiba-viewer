@@ -10,35 +10,26 @@ ENV_PATH = Path(r"C:\keiba_env\.env")
 
 
 def get_env_value(key_name: str, env_file: Path) -> str:
-    """環境変数または .env ファイルから指定されたキーの値を取得する"""
-    # 1. システム環境変数にあれば優先取得
     if key_name in os.environ:
         return os.environ[key_name]
-
-    # 2. .env ファイルの存在確認
     if not env_file.is_file():
         raise FileNotFoundError(f"❌ .envファイルが見つかりません: {env_file}")
 
-    # 3. .env ファイルの解析
     with open(env_file, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            # 空行・コメント行をスキップ
             if not line or line.startswith("#"):
                 continue
             if "=" in line:
                 k, v = line.split("=", 1)
                 if k.strip() == key_name:
-                    # クォーテーション（' や "）があれば除去して返す
                     return v.strip().strip("'\"")
 
     raise KeyError(f"❌ '{key_name}' が {env_file} 内に見つかりません。")
 
 
-# パスワードの取得
 APP_PASSWORD = get_env_value("APP_PASSWORD", ENV_PATH)
 
-# JSON データの読み込み
 with open(JSON_PATH, "r", encoding="utf-8") as f:
     races_data = json.load(f)
 
@@ -53,27 +44,22 @@ html_template = f"""<!DOCTYPE html>
     * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
     body {{ background: var(--bg); color: var(--text); padding: 16px; max-width: 1000px; margin: auto; }}
 
-    /* パスワード保護モーダル */
     #lock-modal {{ position: fixed; inset: 0; background: rgba(15,23,42,0.85); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px); }}
     .lock-box {{ background: white; padding: 28px; border-radius: 12px; max-width: 360px; width: 90%; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }}
     .lock-box input {{ width: 100%; padding: 10px; margin: 12px 0; border: 1px solid var(--border); border-radius: 6px; font-size: 1rem; }}
     .lock-box button {{ width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }}
 
-    /* 上段コントロール */
     .header-bar {{ display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; background: white; padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); }}
     select {{ padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: bold; background: white; }}
 
-    /* Rタブ */
     .tabs-row {{ display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 14px; scrollbar-width: thin; }}
     .r-btn {{ padding: 8px 14px; border: 1px solid var(--border); background: white; border-radius: 6px; cursor: pointer; font-weight: bold; white-space: nowrap; }}
     .r-btn.active {{ background: var(--primary); color: white; border-color: var(--primary); }}
 
-    /* サブタブ */
     .sub-tabs {{ display: flex; border-bottom: 2px solid var(--border); margin-bottom: 16px; }}
     .sub-btn {{ padding: 8px 16px; border: none; background: none; cursor: pointer; font-weight: bold; color: #64748b; }}
     .sub-btn.active {{ color: var(--primary); border-bottom: 3px solid var(--primary); }}
 
-    /* テーブル */
     .tbl-wrap {{ overflow-x: auto; background: white; border-radius: 8px; border: 1px solid var(--border); }}
     table {{ width: 100%; border-collapse: collapse; font-size: 0.85rem; white-space: nowrap; }}
     th, td {{ padding: 10px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; }}
@@ -89,7 +75,6 @@ html_template = f"""<!DOCTYPE html>
     .badge-none {{ color:#94a3b8; }}
     .num-circle {{ display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: white; font-weight: bold; font-size: 0.75rem; }}
 
-    /* 展開カード */
     .metric-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }}
     .metric-card {{ background: white; border: 1px solid var(--border); padding: 12px; border-radius: 8px; text-align: center; }}
     .box {{ background: white; border: 1px solid var(--border); padding: 14px; border-radius: 8px; margin-bottom: 12px; }}
@@ -97,7 +82,6 @@ html_template = f"""<!DOCTYPE html>
 </head>
 <body>
 
-  <!-- パスワード認証モーダル -->
   <div id="lock-modal">
     <div class="lock-box">
       <h3>🔒 閲覧認証</h3>
@@ -117,12 +101,9 @@ html_template = f"""<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- レース番号タブ -->
     <div class="tabs-row" id="race-tabs"></div>
-
     <div class="box" id="race-info" style="margin-bottom:12px;"></div>
 
-    <!-- 画面切替サブタブ -->
     <div class="sub-tabs">
       <button class="sub-btn active" onclick="switchSubTab('list')">📋 AI予測一覧</button>
       <button class="sub-btn" onclick="switchSubTab('pace')">🏁 レース展開</button>
@@ -168,6 +149,21 @@ html_template = f"""<!DOCTYPE html>
     function extractVenue(details) {{
       const m = details.match(/\\d+回\\s*\\n\\s*([^\\s\\d]+)/);
       return m ? m[1].trim() : "その他";
+    }}
+
+    // SABCDランクの色・絵文字装飾関数
+    function formatRank(rank, score) {{
+      const colors = {{
+        'S': {{ color: '#047857', label: '👑 S' }},
+        'A': {{ color: '#059669', label: '🟢 A' }},
+        'B': {{ color: '#d97706', label: '🟡 B' }},
+        'C': {{ color: '#ea580c', label: '🟠 C' }},
+        'D': {{ color: '#dc2626', label: '🔴 D' }}
+      }};
+      const conf = colors[rank] || {{ color: '#64748b', label: rank || '—' }};
+      const scoreNum = parseFloat(score || 0);
+      const sign = scoreNum > 0 ? '+' : '';
+      return `<span style="color:${{conf.color}}; font-weight:bold;">${{conf.label}}</span> <small style="color:#64748b;">(${{sign}}${{scoreNum.toFixed(2)}})</small>`;
     }}
 
     function initApp() {{
@@ -245,8 +241,8 @@ html_template = f"""<!DOCTYPE html>
                   <td class="left" style="color:#64748b;">${{h.jockey}}</td>
                   <td><span style="background:#e2e8f0; padding:2px 5px; border-radius:4px; font-size:0.75rem;">${{h.running_style}}</span></td>
                   <td style="color:var(--primary); font-weight:bold;">${{h.odds}}倍</td>
-                  <td>${{h.base_rank}} (${{(h.base_score||0) > 0 ? '+' : ''}}${{parseFloat(h.base_score||0).toFixed(2)}})</td>
-                  <td>${{h.cond_rank}} (${{(parseFloat(h.plus_sum||0)+parseFloat(h.minus_sum||0)) > 0 ? '+' : ''}}${{(parseFloat(h.plus_sum||0)+parseFloat(h.minus_sum||0)).toFixed(2)}})</td>
+                  <td>${{formatRank(h.base_rank, h.base_score)}}</td>
+                  <td>${{formatRank(h.cond_rank, parseFloat(h.plus_sum||0)+parseFloat(h.minus_sum||0))}}</td>
                 </tr>
               `).join('')}}
             </tbody>
@@ -290,6 +286,12 @@ html_template = f"""<!DOCTYPE html>
       const h = race.horses[hIdx];
       if (!h) return;
 
+      const baseVal = parseFloat(h.base_score || 0);
+      const plusVal = parseFloat(h.plus_sum || 0);
+      const minusVal = parseFloat(h.minus_sum || 0);
+      const condVal = plusVal + minusVal;
+      const totalVal = baseVal + condVal;
+
       const signals = (h.one_change_signals || []).map(s => `
         <span style="display:inline-block; padding:2px 6px; background:#e0f2fe; color:#0369a1; border-radius:4px; font-size:0.75rem; font-weight:bold; margin-right:4px;">${{s}}</span>
       `).join('') || '<span style="color:#94a3b8; font-size:0.85rem;">なし</span>';
@@ -302,9 +304,18 @@ html_template = f"""<!DOCTYPE html>
           <p style="margin-top:4px;"><b>💰 単勝オッズ:</b> ${{h.odds}}倍</p>
           <p style="margin-top:8px;"><b>⚡ 特筆シグナル:</b> ${{signals}}</p>
           <hr style="margin:10px 0; border:0; border-top:1px solid #e2e8f0;">
-          <b>📈 要因分析:</b>
-          <div style="background:#f8fafc; padding:10px; border-radius:6px; font-size:0.85rem; color:#334155; margin-top:6px;">
-            ${{h.reasons || '特記事項なし'}}
+          <b>📊 スコア内訳:</b>
+          <div style="background:#f1f5f9; padding:10px; border-radius:6px; font-size:0.85rem; margin-top:6px; line-height:1.6;">
+            • 地力評価: ${{formatRank(h.base_rank, baseVal)}}<br>
+            • 条件適性: ${{formatRank(h.cond_rank, condVal)}} (加点: <span style="color:#047857; font-weight:bold;">${{plusVal > 0 ? '+' : ''}}${{plusVal.toFixed(2)}}</span> / 減点: <span style="color:#b91c1c; font-weight:bold;">${{minusVal.toFixed(2)}}</span>)<br>
+            <hr style="margin:4px 0; border:0; border-top:1px dashed #cbd5e1;">
+            <b>🎯 最終トータルスコア: ${{totalVal > 0 ? '+' : ''}}${{totalVal.toFixed(2)}}</b>
+          </div>
+          <div style="margin-top:10px;">
+            <b>📈 要因分析:</b>
+            <div style="background:#f8fafc; padding:10px; border-radius:6px; font-size:0.85rem; color:#334155; margin-top:4px;">
+              ${{h.reasons || '特記事項なし'}}
+            </div>
           </div>
         </div>
       `;
