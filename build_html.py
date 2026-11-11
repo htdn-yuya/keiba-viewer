@@ -1,6 +1,5 @@
 import json
 import os
-import re
 from pathlib import Path
 
 # ================= 設定 =================
@@ -8,176 +7,6 @@ JSON_PATH = Path(r"C:\keiba\keiba_pipeline\reports\latest_prediction.json")
 OUTPUT_HTML = Path(r"C:\Streamlit_app\index.html")
 ENV_PATH = Path(r"C:\keiba_env\.env")
 # ========================================
-
-
-def get_base_rank(score: float, is_newhorse: bool = False) -> str:
-    """Rank base_score with the same five-grade thresholds as the prediction app."""
-    if is_newhorse:
-        if score >= -0.193:
-            return "S"
-        elif score >= -0.198:
-            return "A"
-        elif score >= -0.205:
-            return "B"
-        elif score >= -0.211:
-            return "C"
-        return "D"
-
-    if score >= 0.36:
-        return "S"
-    elif score >= 0.14:
-        return "A"
-    elif score >= -0.08:
-        return "B"
-    elif score >= -0.25:
-        return "C"
-    return "D"
-
-
-def get_cond_rank(
-    score: float, is_newhorse: bool = False, race_mean_cond: float = 0.0
-) -> str:
-    """Rank condition scores with the same five-grade thresholds as the prediction app."""
-    if is_newhorse:
-        diff = score - race_mean_cond
-        if score >= 0.05 or diff >= 0.0012:
-            return "S"
-        elif diff >= 0.0003:
-            return "A"
-        elif diff >= -0.0001:
-            return "B"
-        elif diff >= -0.0007:
-            return "C"
-        return "D"
-
-    if score >= 0.16:
-        return "S"
-    elif score >= 0.09:
-        return "A"
-    elif score >= 0.03:
-        return "B"
-    elif score >= -0.03:
-        return "C"
-    return "D"
-
-
-def is_newhorse_race_list(horses_list, race_name: str = "") -> bool:
-    """Detect maiden races from the name or the base-score distribution."""
-    if re.search(r"新馬|メイクデビュー", str(race_name)):
-        return True
-    if horses_list:
-        base_vals = [float(h.get("base_score", 0.0) or 0.0) for h in horses_list]
-        if max(base_vals) < 0.05 and min(base_vals) > -0.32:
-            return True
-    return False
-
-
-def format_rank_emoji(rank_str: str, score: float) -> str:
-    emoji_map = {
-        "S": '<span style="color:#047857; font-weight:bold;">👑 S</span>',
-        "A": '<span style="color:#059669; font-weight:bold;">🟢 A</span>',
-        "B": '<span style="color:#d97706; font-weight:bold;">🟡 B</span>',
-        "C": '<span style="color:#ea580c; font-weight:bold;">🟠 C</span>',
-        "D": '<span style="color:#dc2626; font-weight:bold;">🔴 D</span>',
-    }
-    formatted = emoji_map.get(rank_str, rank_str)
-    return f"{formatted} <small style='color:#64748b;'>({score:+.2f})</small>"
-
-
-def assign_evaluations(horses_list, race_name: str = ""):
-    """Apply the same ranks and main badge rules as the prediction app."""
-    is_newhorse = is_newhorse_race_list(horses_list, race_name)
-    cond_vals = [
-        float(h.get("plus_sum", 0.0) or 0.0) + float(h.get("minus_sum", 0.0) or 0.0)
-        for h in horses_list
-    ]
-    race_mean_cond = sum(cond_vals) / len(cond_vals) if cond_vals else 0.0
-
-    for idx, h in enumerate(horses_list, start=1):
-        rank = int(float(h.get("rank", h.get("ai_rank", idx)) or idx))
-        base_val = float(h.get("base_score", 0.0) or 0.0)
-        plus_val = float(h.get("plus_sum", 0.0) or 0.0)
-        minus_val = float(h.get("minus_sum", 0.0) or 0.0)
-        cond_val = plus_val + minus_val
-        total_val = base_val + cond_val
-        cond_diff = cond_val - race_mean_cond
-
-        try:
-            axis_val = float(h.get("axis_score", 0.0) or 0.0)
-        except (ValueError, TypeError):
-            axis_val = 0.0
-        try:
-            burst_val = float(h.get("burst_score", 0.0) or 0.0)
-        except (ValueError, TypeError):
-            burst_val = 0.0
-        try:
-            weak_risk_raw = h.get("weak_risk_score")
-            weak_risk_val = (
-                1.0
-                if weak_risk_raw is None or weak_risk_raw == ""
-                else float(weak_risk_raw)
-            )
-        except (ValueError, TypeError):
-            weak_risk_val = 1.0
-
-        b_rank = get_base_rank(base_val, is_newhorse=is_newhorse)
-        c_rank = get_cond_rank(
-            cond_val, is_newhorse=is_newhorse, race_mean_cond=race_mean_cond
-        )
-        h["base_rank"] = b_rank
-        h["cond_rank"] = c_rank
-        h["base_display"] = format_rank_emoji(b_rank, base_val)
-        h["cond_display"] = format_rank_emoji(c_rank, cond_val)
-
-        badge = "—"
-        if is_newhorse:
-            if rank == 1 and total_val >= 0.05 and weak_risk_val <= 0.22:
-                badge = "🎯 鉄板軸"
-            elif rank <= 2 and (
-                total_val >= 0.0 or (axis_val >= 6.90 and weak_risk_val <= 0.49)
-            ):
-                badge = "👑 本命軸"
-            elif rank <= 3 and total_val >= -0.216 and weak_risk_val <= 0.50:
-                badge = "🛡️ 相手軸"
-            elif (
-                4 <= rank <= 8
-                and total_val >= -0.220
-                and (burst_val >= 0.052 or cond_diff >= 0.001)
-            ):
-                badge = "🚀 バースト穴"
-            elif (
-                4 <= rank <= 8
-                and total_val >= -0.226
-                and (weak_risk_val <= 0.42 or axis_val >= 6.10)
-            ):
-                badge = "💎 堅実穴"
-        else:
-            if rank == 1 and total_val > 0.56 and weak_risk_val <= 0.22:
-                badge = "🎯 鉄板軸"
-            elif rank <= 3 and total_val > 0.28:
-                badge = "👑 本命軸"
-            elif rank <= 3 and (
-                total_val >= 0.10 or (rank == 1 and axis_val >= 8.0)
-            ):
-                badge = "🛡️ 相手軸"
-            elif (
-                4 <= rank <= 8
-                and weak_risk_val <= 0.55
-                and (
-                    (burst_val >= 0.18 and total_val >= 0.20)
-                    or (burst_val >= 0.13 and cond_val >= 0.14 and total_val > 0.0)
-                )
-            ):
-                badge = "🚀 バースト穴"
-            elif (
-                4 <= rank <= 8
-                and weak_risk_val <= 0.34
-                and (total_val >= 0.16 or base_val >= 0.25)
-            ):
-                badge = "💎 堅実穴"
-
-        h["main_badge"] = badge
-    return horses_list
 
 
 def get_env_value(key_name: str, env_file: Path) -> str:
@@ -203,10 +32,6 @@ APP_PASSWORD = get_env_value("APP_PASSWORD", ENV_PATH)
 
 with open(JSON_PATH, "r", encoding="utf-8") as f:
     races_data = json.load(f)
-
-for race in races_data:
-    if "horses" in race:
-        race["horses"] = assign_evaluations(race["horses"], race.get("name", ""))
 
 html_template = f"""<!DOCTYPE html>
 <html lang="ja">
@@ -340,7 +165,7 @@ html_template = f"""<!DOCTYPE html>
       return 1;
     }}
 
-    // SABCDランクの色・絵文字装飾関数
+    // SABCDランクの色・絵文字装飾関数（JSON内のランクとスコアをそのまま表示）
     function formatRank(rank, score) {{
       const colors = {{
         'S': {{ color: '#047857', label: '👑 S' }},
@@ -356,7 +181,7 @@ html_template = f"""<!DOCTYPE html>
     }}
 
     function initApp() {{
-      RAW_DATA.forEach(r => r.venue = extractVenue(r.details || ""));
+      RAW_DATA.forEach(r => r.venue = r.venue || extractVenue(r.details || ""));
       const venues = [...new Set(RAW_DATA.map(r => r.venue))];
       const sel = document.getElementById("venue-select");
       sel.innerHTML = venues.map(v => `<option value="${{v}}">${{v}}</option>`).join("");
@@ -367,7 +192,7 @@ html_template = f"""<!DOCTYPE html>
     function onVenueChange() {{
       currentVenue = document.getElementById("venue-select").value;
       currentRaces = RAW_DATA.filter(r => r.venue === currentVenue);
-      currentRaces.sort((a,b) => parseInt(a.id||0) - parseInt(b.id||0));
+      currentRaces.sort((a,b) => getRaceNum(a, 0) - getRaceNum(b, 0));
       currentRaceIdx = 0;
       renderRaceTabs();
       renderCurrentRace();
@@ -468,10 +293,11 @@ html_template = f"""<!DOCTYPE html>
             <tbody>
               ${{horses.map(h => {{
                 const apt = h.aptitude_label || aptByNum[String(h.num)] || '—';
+                const badge = h.main_badge || h.tag || '—';
                 return `
                 <tr>
                   <td><b>${{h.rank}}位</b></td>
-                  <td><span class="badge ${{getBadgeClass(h.main_badge||'—')}}">${{h.main_badge||'—'}}</span></td>
+                  <td><span class="badge ${{getBadgeClass(badge)}}">${{badge}}</span></td>
                   <td><span class="num-circle">${{h.num}}</span></td>
                   <td class="left"><b>${{h.name}}</b>${{formatSignalIcons(h.one_change_signals)}}</td>
                   <td class="left" style="color:#64748b;">${{h.jockey}}</td>
@@ -510,6 +336,7 @@ html_template = f"""<!DOCTYPE html>
       const minusVal = parseFloat(h.minus_sum || 0);
       const condVal = plusVal + minusVal;
       const totalVal = baseVal + condVal;
+      const badge = h.main_badge || h.tag || '—';
 
       const signals = (h.one_change_signals || []).map(s => `
         <span style="display:inline-block; padding:2px 6px; background:#e0f2fe; color:#0369a1; border-radius:4px; font-size:0.75rem; font-weight:bold; margin-right:4px;">${{s}}</span>
@@ -518,7 +345,7 @@ html_template = f"""<!DOCTYPE html>
       document.getElementById("horse-detail-content").innerHTML = `
         <div class="box">
           <h3 style="color:var(--primary); margin-bottom:8px;">${{h.num}}番 ${{h.name}} <small style="color:#64748b;">(${{h.rank}}位)</small></h3>
-          <p><b>🏷️ 評価:</b> <span class="badge ${{getBadgeClass(h.main_badge||'—')}}">${{h.main_badge||'—'}}</span></p>
+          <p><b>🏷️ 評価:</b> <span class="badge ${{getBadgeClass(badge)}}">${{badge}}</span></p>
           <p style="margin-top:4px;"><b>🏇 騎手 / 脚質:</b> ${{h.jockey}} / ${{h.running_style}}</p>
           <p style="margin-top:4px;"><b>💰 単勝オッズ:</b> ${{h.odds}}倍</p>
           <p style="margin-top:8px;"><b>⚡ 特筆シグナル:</b> ${{signals}}</p>
