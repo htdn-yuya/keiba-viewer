@@ -56,8 +56,8 @@ html_template = f"""<!DOCTYPE html>
     .r-btn {{ padding: 8px 14px; border: 1px solid var(--border); background: white; border-radius: 6px; cursor: pointer; font-weight: bold; white-space: nowrap; }}
     .r-btn.active {{ background: var(--primary); color: white; border-color: var(--primary); }}
 
-    .sub-tabs {{ display: flex; border-bottom: 2px solid var(--border); margin-bottom: 16px; }}
-    .sub-btn {{ padding: 8px 16px; border: none; background: none; cursor: pointer; font-weight: bold; color: #64748b; }}
+    .sub-tabs {{ display: flex; border-bottom: 2px solid var(--border); margin-bottom: 16px; overflow-x: auto; scrollbar-width: none; }}
+    .sub-btn {{ padding: 8px 16px; border: none; background: none; cursor: pointer; font-weight: bold; color: #64748b; white-space: nowrap; }}
     .sub-btn.active {{ color: var(--primary); border-bottom: 3px solid var(--primary); }}
 
     .tbl-wrap {{ overflow-x: auto; background: white; border-radius: 8px; border: 1px solid var(--border); }}
@@ -78,6 +78,13 @@ html_template = f"""<!DOCTYPE html>
     .metric-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }}
     .metric-card {{ background: white; border: 1px solid var(--border); padding: 12px; border-radius: 8px; text-align: center; }}
     .box {{ background: white; border: 1px solid var(--border); padding: 14px; border-radius: 8px; margin-bottom: 12px; }}
+
+    /* 連動予測用スタイル */
+    .prob-bar-bg {{ background-color: #e2e8f0; height: 8px; border-radius: 4px; width: 80px; margin: 0 auto; overflow: hidden; }}
+    .prob-bar-fill {{ background-color: #3b82f6; height: 100%; transition: width 0.3s; }}
+    .rank-1 {{ background-color: #ffd700; color: #000; padding: 2px 6px; border-radius: 4px; font-weight: bold; display: inline-block; }}
+    .rank-2 {{ background-color: #c0c0c0; color: #000; padding: 2px 6px; border-radius: 4px; font-weight: bold; display: inline-block; }}
+    .rank-3 {{ background-color: #cd7f32; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold; display: inline-block; }}
   </style>
 </head>
 <body>
@@ -106,10 +113,24 @@ html_template = f"""<!DOCTYPE html>
 
     <div class="sub-tabs">
       <button class="sub-btn active" onclick="switchSubTab('list')">📋 能力指数＆展開予測シート</button>
+      <button class="sub-btn" onclick="switchSubTab('cond')">🎯 連動予測(1着固定)</button>
       <button class="sub-btn" onclick="switchSubTab('detail')">🐎 馬詳細</button>
     </div>
 
     <div id="view-list" class="tab-content"></div>
+    <div id="view-cond" class="tab-content" style="display:none;">
+      <div class="box">
+        <label style="font-weight:bold; color:var(--primary);">🎯 1着想定馬（展開の軸）を選択:</label>
+        <select id="winner-select" style="width:100%; margin-top:8px;" onchange="renderConditionalList()"></select>
+        <p style="font-size:0.8rem; color:#64748b; margin-top:8px;">選択した馬が1着になる展開を想定した場合の、他の馬が2・3着に入る確率（条件付き複勝率）のランキングです。</p>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>連動順位</th><th>馬番</th><th class="left">馬名</th><th>通常AI順位</th><th>評価</th><th>条件付き確率</th><th>単勝</th></tr></thead>
+          <tbody id="cond-tbody"></tbody>
+        </table>
+      </div>
+    </div>
     <div id="view-detail" class="tab-content" style="display:none;"></div>
   </div>
 
@@ -149,7 +170,6 @@ html_template = f"""<!DOCTYPE html>
       return m ? m[1].trim() : "その他";
     }}
 
-    // 会場ごとの正しいレース番号（1R〜12R）を取得
     function getRaceNum(race, idx) {{
       if (race && race.race_num) return race.race_num;
       if (race && race.race_no) return race.race_no;
@@ -165,7 +185,6 @@ html_template = f"""<!DOCTYPE html>
       return 1;
     }}
 
-    // SABCDランクの色・絵文字装飾関数（JSON内のランクとスコアをそのまま表示）
     function formatRank(rank, score) {{
       const colors = {{
         'S': {{ color: '#047857', label: '👑 S' }},
@@ -214,9 +233,10 @@ html_template = f"""<!DOCTYPE html>
     function switchSubTab(tab) {{
       currentSubTab = tab;
       document.querySelectorAll(".sub-btn").forEach((b, i) => {{
-        b.classList.toggle("active", ["list", "detail"][i] === tab);
+        b.classList.toggle("active", ["list", "cond", "detail"][i] === tab);
       }});
       document.getElementById("view-list").style.display = tab === "list" ? "block" : "none";
+      document.getElementById("view-cond").style.display = tab === "cond" ? "block" : "none";
       document.getElementById("view-detail").style.display = tab === "detail" ? "block" : "none";
     }}
 
@@ -314,15 +334,65 @@ html_template = f"""<!DOCTYPE html>
         </div>
       `;
 
+      // 馬詳細のセレクトボックス
       document.getElementById("view-detail").innerHTML = `
         <div style="margin-bottom:12px;">
-          <select id="horse-sel" style="width:100%;" onchange="renderHorseDetail()">
+          <select id="horse-sel" style="width:100%; padding:8px;" onchange="renderHorseDetail()">
             ${{horses.map((h, i) => `<option value="${{i}}">${{h.rank}}位: ${{h.num}}番 ${{h.name}}</option>`).join('')}}
           </select>
         </div>
         <div id="horse-detail-content"></div>
       `;
       renderHorseDetail();
+
+      // 連動予測タブのセレクトボックスのセットアップ
+      const winSel = document.getElementById("winner-select");
+      winSel.innerHTML = horses.map(h => {{
+        const b = h.main_badge && h.main_badge !== '—' ? ` [${{h.main_badge}}]` : '';
+        return `<option value="${{h.num}}">${{h.num}}番 ${{h.name}} (AI ${{h.rank}}位)${{b}}</option>`;
+      }}).join('');
+      renderConditionalList();
+    }}
+
+    function renderConditionalList() {{
+      const race = currentRaces[currentRaceIdx];
+      const winnerNumStr = document.getElementById("winner-select").value;
+      if (!race || !winnerNumStr) return;
+
+      const horses = race.horses || [];
+      const others = horses.filter(h => String(h.num) !== String(winnerNumStr));
+
+      // 各馬の conditional_probs 辞書から、winnerNumStr をキーとした確率を取り出してソート
+      others.forEach(h => {{
+          h._current_cond_prob = (h.conditional_probs && h.conditional_probs[winnerNumStr]) ? parseFloat(h.conditional_probs[winnerNumStr]) : 0;
+      }});
+      others.sort((a, b) => b._current_cond_prob - a._current_cond_prob);
+
+      const tbody = document.getElementById("cond-tbody");
+      tbody.innerHTML = others.map((h, idx) => {{
+        const rank = idx + 1;
+        const probPct = (h._current_cond_prob * 100).toFixed(1);
+        const badge = h.main_badge || h.tag || '—';
+        let rankHtml = rank;
+        if (rank === 1) rankHtml = `<span class="rank-1">1位</span>`;
+        if (rank === 2) rankHtml = `<span class="rank-2">2位</span>`;
+        if (rank === 3) rankHtml = `<span class="rank-3">3位</span>`;
+
+        return `
+          <tr>
+            <td>${{rankHtml}}</td>
+            <td><span class="num-circle">${{h.num}}</span></td>
+            <td class="left"><b>${{h.name}}</b></td>
+            <td>${{h.rank}}位</td>
+            <td><span class="badge ${{getBadgeClass(badge)}}">${{badge}}</span></td>
+            <td>
+              <div>${{probPct}}%</div>
+              <div class="prob-bar-bg"><div class="prob-bar-fill" style="width: ${{probPct}}%;"></div></div>
+            </td>
+            <td style="color:var(--primary); font-weight:bold;">${{h.odds}}</td>
+          </tr>
+        `;
+      }}).join("");
     }}
 
     function renderHorseDetail() {{
