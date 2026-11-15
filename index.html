@@ -87,11 +87,12 @@
       <div class="box">
         <label style="font-weight:bold; color:var(--primary);">🎯 1着想定馬（展開の軸）を選択:</label>
         <select id="winner-select" style="width:100%; margin-top:8px;" onchange="renderConditionalList()"></select>
-        <p style="font-size:0.8rem; color:#64748b; margin-top:8px;">選択した馬が1着になる展開を想定した場合の、他の馬が2・3着に入る確率（条件付き複勝率）のランキングです。</p>
+        <p style="font-size:0.8rem; color:#64748b; margin-top:8px;">選択した馬が1着になる展開を想定した場合の、2着・3着候補の予測シェア（Plackett-Luce順位連動モデル）です。</p>
       </div>
+      <div id="cond-pair-picks" style="margin-bottom:12px;"></div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>連動順位</th><th>馬番</th><th class="left">馬名</th><th>通常AI順位</th><th>評価</th><th>条件付き確率</th><th>単勝</th></tr></thead>
+          <thead><tr><th>連動順位</th><th>馬番</th><th class="left">馬名</th><th>通常AI順位</th><th>評価</th><th>2着予測シェア</th><th>3着予測シェア</th><th>総合シェア</th><th>単勝</th></tr></thead>
           <tbody id="cond-tbody"></tbody>
         </table>
       </div>
@@ -325,20 +326,65 @@
       if (!race || !winnerNumStr) return;
 
       const horses = race.horses || [];
+      const selectedWinner = horses.find(h => String(h.num) === String(winnerNumStr));
       const others = horses.filter(h => String(h.num) !== String(winnerNumStr));
 
-      // 各馬の conditional_probs 辞書から、winnerNumStr をキーとした確率を取り出してソート
       others.forEach(h => {
-          h._current_cond_prob = (h.conditional_probs && h.conditional_probs[winnerNumStr]) ? parseFloat(h.conditional_probs[winnerNumStr]) : 0;
+        const places = (h.conditional_places && h.conditional_places[winnerNumStr]) ? h.conditional_places[winnerNumStr] : null;
+        const fallbackProb = (h.conditional_probs && h.conditional_probs[winnerNumStr] != null) ? parseFloat(h.conditional_probs[winnerNumStr]) : 0;
+        h._second_prob = (places && places.second != null) ? parseFloat(places.second) : fallbackProb;
+        h._third_prob = (places && places.third != null) ? parseFloat(places.third) : fallbackProb;
+        h._current_cond_prob = (h._second_prob + h._third_prob) / 2.0;
       });
       others.sort((a, b) => b._current_cond_prob - a._current_cond_prob);
+
+      const byNum = {};
+      others.forEach(h => { byNum[String(h.num)] = h; });
+      const pairPick = (selectedWinner && selectedWinner.conditional_pair_picks && selectedWinner.conditional_pair_picks[winnerNumStr])
+        ? selectedWinner.conditional_pair_picks[winnerNumStr]
+        : null;
+
+      let secondHorse = pairPick ? byNum[String(pairPick.second)] : null;
+      let thirdHorse = pairPick ? byNum[String(pairPick.third)] : null;
+      if (!secondHorse || !thirdHorse || secondHorse === thirdHorse) {
+        const sortedBySecond = [...others].sort((a, b) => b._second_prob - a._second_prob);
+        secondHorse = sortedBySecond[0] || null;
+        const sortedByThird = others.filter(h => h !== secondHorse).sort((a, b) => b._third_prob - a._third_prob);
+        thirdHorse = sortedByThird[0] || null;
+      }
+
+      const pairBox = document.getElementById("cond-pair-picks");
+      if (secondHorse && thirdHorse) {
+        const jointStr = (pairPick && pairPick.joint_share != null)
+          ? `<div style="grid-column: 1 / -1; text-align:right; font-size:0.78rem; color:#475569;">💡 1着「${selectedWinner ? selectedWinner.num + '番 ' + selectedWinner.name : winnerNumStr + '番'}」固定時の2・3着推奨ペア同時シェア: <b>${(parseFloat(pairPick.joint_share) * 100).toFixed(2)}%</b></div>`
+          : "";
+        pairBox.innerHTML = `
+          <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;">
+            <div class="metric-card" style="border-left:4px solid #c0c0c0; text-align:left; padding:12px 14px;">
+              <small style="color:#64748b; font-weight:bold;">🥈 2着予測（最有力）</small>
+              <div style="font-size:1.05rem; font-weight:bold; color:#0f172a; margin-top:4px;">${secondHorse.num}番 ${secondHorse.name}</div>
+              <small style="color:var(--primary); font-weight:bold;">2着予測シェア: ${(secondHorse._second_prob * 100).toFixed(1)}% / 単勝 ${secondHorse.odds}倍</small>
+            </div>
+            <div class="metric-card" style="border-left:4px solid #cd7f32; text-align:left; padding:12px 14px;">
+              <small style="color:#64748b; font-weight:bold;">🥉 3着予測（最有力）</small>
+              <div style="font-size:1.05rem; font-weight:bold; color:#0f172a; margin-top:4px;">${thirdHorse.num}番 ${thirdHorse.name}</div>
+              <small style="color:var(--primary); font-weight:bold;">3着予測シェア: ${(thirdHorse._third_prob * 100).toFixed(1)}% / 単勝 ${thirdHorse.odds}倍</small>
+            </div>
+            ${jointStr}
+          </div>
+        `;
+      } else {
+        pairBox.innerHTML = "";
+      }
 
       const tbody = document.getElementById("cond-tbody");
       tbody.innerHTML = others.map((h, idx) => {
         const rank = idx + 1;
-        const probPct = (h._current_cond_prob * 100).toFixed(1);
+        const secPct = (h._second_prob * 100).toFixed(1);
+        const thdPct = (h._third_prob * 100).toFixed(1);
+        const avgPct = (h._current_cond_prob * 100).toFixed(1);
         const badge = h.main_badge || h.tag || '—';
-        let rankHtml = rank;
+        let rankHtml = `${rank}位`;
         if (rank === 1) rankHtml = `<span class="rank-1">1位</span>`;
         if (rank === 2) rankHtml = `<span class="rank-2">2位</span>`;
         if (rank === 3) rankHtml = `<span class="rank-3">3位</span>`;
@@ -350,11 +396,13 @@
             <td class="left"><b>${h.name}</b></td>
             <td>${h.rank}位</td>
             <td><span class="badge ${getBadgeClass(badge)}">${badge}</span></td>
+            <td style="font-weight:bold; color:#0f172a;">${secPct}%</td>
+            <td style="font-weight:bold; color:#334155;">${thdPct}%</td>
             <td>
-              <div>${probPct}%</div>
-              <div class="prob-bar-bg"><div class="prob-bar-fill" style="width: ${probPct}%;"></div></div>
+              <div>${avgPct}%</div>
+              <div class="prob-bar-bg"><div class="prob-bar-fill" style="width: ${Math.min(100, parseFloat(avgPct) * 2.5)}%;"></div></div>
             </td>
-            <td style="color:var(--primary); font-weight:bold;">${h.odds}</td>
+            <td style="color:var(--primary); font-weight:bold;">${h.odds}倍</td>
           </tr>
         `;
       }).join("");
