@@ -109,7 +109,11 @@ html_template = f"""<!DOCTYPE html>
     .position-warn {{ background: #ffedd5; color: #9a3412; }}
     .position-unknown {{ background: #e2e8f0; color: #475569; }}
     .position-neutral {{ background: #f1f5f9; color: #334155; }}
-    .signal-badge {{ display: inline-block; padding: 1px 5px; margin-left: 3px; border-radius: 4px; background: #e0f2fe; border: 1px solid #bae6fd; font-size: 10px; cursor: help; }}
+    .signal-badge {{ display: inline-block; padding: 1px 5px; margin-left: 3px; border-radius: 4px; font-size: 10px; cursor: help; font-weight: 700; }}
+    .signal-detail-badge {{ display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; margin-right: 4px; margin-bottom: 3px; }}
+    .sig-info {{ background: #f3e8ff; color: #6d28d9; border: 1px solid #d8b4fe; }}
+    .sig-pos {{ background: #dcfce7; color: #15803d; border: 1px solid #86efac; }}
+    .sig-neg {{ background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }}
 
     /* 1着時の2・3着推奨ペアチップ（generate_race_images.py準拠） */
     .pair-rec-main {{ display: inline-flex; align-items: center; gap: 3px; font-weight: 700; }}
@@ -368,12 +372,32 @@ html_template = f"""<!DOCTYPE html>
       document.getElementById("view-detail").style.display = tab === "detail" ? "block" : "none";
     }}
 
+    function getSignalCategoryClass(signalStr) {{
+      const s = String(signalStr || "");
+      // 1. データ起点アラート（紫）
+      if (s.includes("🌍") || s.includes("🔰") || s.includes("データ少") || s.includes("キャリア浅")) {{
+        return "sig-info";
+      }}
+      // 2. ネガティブ・割引材料（赤）
+      if (
+        s.includes("🩹") || s.includes("🚚") || s.includes("⚠️") ||
+        s.includes("🔄") || s.includes("📏") || s.includes("🧱") ||
+        s.includes("馬体重増減") || s.includes("休み明け") || s.includes("遠征") ||
+        s.includes("大幅増") || s.includes("弱化") || s.includes("延長") || s.includes("昇級")
+      ) {{
+        return "sig-neg";
+      }}
+      // 3. ポジティブ・一変好材料（緑）
+      return "sig-pos";
+    }}
+
     function formatSignalIcons(signals) {{
       if (!signals || !signals.length) return "";
       return signals.map(s => {{
         const str = String(s).trim();
         const icon = str.split(/\\s+/)[0] || str;
-        return `<span class="signal-badge" title="${{str}}">${{icon}}</span>`;
+        const cls = getSignalCategoryClass(str);
+        return `<span class="signal-badge ${{cls}}" title="${{str}}">${{icon}}</span>`;
       }}).join("");
     }}
 
@@ -471,12 +495,13 @@ html_template = f"""<!DOCTYPE html>
                   const baseHtml = h.base_display || formatRank(h.base_rank, h.base_score);
                   const condHtml = h.cond_display || formatRank(h.cond_rank, parseFloat(h.plus_sum || 0) + parseFloat(h.minus_sum || 0));
                   const pairHtml = pairRecommendationHtml(h, horses, rVal);
+                  const listSignals = Array.isArray(h.summary_signals) ? h.summary_signals : (h.one_change_signals || []);
                   return `
                   <tr class="${{rVal === 1 ? 'top-rank' : ''}}">
                     <td class="rank-cell">${{rVal}}位</td>
                     <td><span class="badge ${{getBadgeClass(badge)}}">${{badge}}</span></td>
                     <td><span class="num-circle">${{h.num}}</span></td>
-                    <td class="left" style="font-weight:700;">${{h.name}}${{formatSignalIcons(h.one_change_signals)}}</td>
+                    <td class="left" style="font-weight:700;">${{h.name}}${{formatSignalIcons(listSignals)}}</td>
                     <td class="left" style="color:#475569;">${{h.jockey || '不明'}}</td>
                     <td><span class="style-badge">${{h.running_style || '不明'}}</span></td>
                     <td>${{positionBadgeHtml(apt)}}</td>
@@ -614,7 +639,7 @@ html_template = f"""<!DOCTYPE html>
       const badge = h.main_badge || h.tag || '—';
 
       const signals = (h.one_change_signals || []).map(s => `
-        <span style="display:inline-block; padding:2px 6px; background:#e0f2fe; color:#0369a1; border-radius:4px; font-size:0.75rem; font-weight:bold; margin-right:4px;">${{s}}</span>
+        <span class="signal-detail-badge ${{getSignalCategoryClass(s)}}">${{s}}</span>
       `).join('') || '<span style="color:#94a3b8; font-size:0.85rem;">なし</span>';
 
       document.getElementById("horse-detail-content").innerHTML = `
