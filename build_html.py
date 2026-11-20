@@ -1,12 +1,30 @@
+import argparse
 import json
 import os
 from pathlib import Path
 
-# ================= 設定 =================
-JSON_PATH = Path(r"C:\keiba\keiba_pipeline\reports\latest_prediction.json")
-OUTPUT_HTML = Path(r"C:\Streamlit_app\index.html")
+# ================= デフォルト設定 =================
+DEFAULT_JSON_PATH = Path(r"C:\keiba\keiba_pipeline\reports\latest_prediction.json")
+DEFAULT_OUTPUT_HTML = Path(r"C:\Streamlit_app\index.html")
 ENV_PATH = Path(r"C:\keiba_env\.env")
-# ========================================
+# ================================================
+
+
+def _parse_args():
+    parser = argparse.ArgumentParser(description="AI競馬予測ビューアーHTML生成")
+    parser.add_argument(
+        "--json",
+        type=Path,
+        default=DEFAULT_JSON_PATH,
+        help="入力予測JSONパス（省略時は latest_prediction.json）",
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=DEFAULT_OUTPUT_HTML,
+        help="出力HTMLパス（省略時は index.html）",
+    )
+    return parser.parse_args()
 
 
 def get_env_value(key_name: str, env_file: Path) -> str:
@@ -28,6 +46,9 @@ def get_env_value(key_name: str, env_file: Path) -> str:
     raise KeyError(f"❌ '{key_name}' が {env_file} 内に見つかりません。")
 
 
+args = _parse_args()
+JSON_PATH = args.json
+OUTPUT_HTML = args.out
 APP_PASSWORD = get_env_value("APP_PASSWORD", ENV_PATH)
 
 with open(JSON_PATH, "r", encoding="utf-8") as f:
@@ -115,13 +136,17 @@ html_template = f"""<!DOCTYPE html>
     .sig-pos {{ background: #dcfce7; color: #15803d; border: 1px solid #86efac; }}
     .sig-neg {{ background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }}
 
-    /* 1着時の2・3着推奨ペアチップ（generate_race_images.py準拠） */
-    .pair-rec-main {{ display: inline-flex; align-items: center; gap: 3px; font-weight: 700; }}
-    .pair-rec-sub {{ display: inline-flex; align-items: center; gap: 3px; opacity: 0.68; }}
-    .pair-chip {{ display: inline-block; padding: 2px 5px; border-radius: 4px; font-size: 10.5px; font-weight: 700; }}
+    /* 1着時の堅実相手・穴馬推奨チップ */
+    .pair-rec-main {{ display: inline-flex; align-items: center; gap: 4px; font-weight: 700; }}
+    .pair-rec-sub {{ display: inline-flex; align-items: center; gap: 4px; opacity: 0.72; }}
+    .pair-chip {{ display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10.5px; font-weight: 700; cursor: help; }}
+    .pair-solid {{ background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; }}
+    .pair-upset {{ background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; }}
+    .pair-upset-strong {{ background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }}
     .pair-2nd {{ background: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; }}
     .pair-3rd {{ background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; }}
     .pair-arrow {{ color: #94a3b8; font-size: 10px; }}
+    tr.selected-winner-row td {{ background-color: #ecfeff; font-weight: 700; }}
 
     .box {{ background: white; border: 1px solid var(--border); padding: 14px; border-radius: 10px; margin-bottom: 12px; }}
     .prob-bar-bg {{ background-color: #e2e8f0; height: 8px; border-radius: 4px; width: 80px; margin: 0 auto; overflow: hidden; }}
@@ -166,12 +191,21 @@ html_template = f"""<!DOCTYPE html>
       <div class="box">
         <label style="font-weight:bold; color:var(--primary);">🎯 1着想定馬（展開の軸）を選択:</label>
         <select id="winner-select" style="width:100%; margin-top:8px;" onchange="renderConditionalList()"></select>
-        <p style="font-size:0.8rem; color:#64748b; margin-top:8px;">選択した馬が1着になる展開を想定した場合の、2着・3着候補の予測シェア（Plackett-Luce順位連動モデル）です。</p>
+        <p style="font-size:0.8rem; color:#64748b; margin-top:8px;">選択した馬が1着になる世界線を想定した場合の、<b>🛡️ 堅実相手（1頭）</b>と<b>🚀 穴馬（予測5位以下・純粋リフト最上位1頭）</b>の連動推奨です。</p>
       </div>
       <div id="cond-pair-picks" style="margin-bottom:12px;"></div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>連動順位</th><th>馬番</th><th class="left">馬名</th><th>通常AI順位</th><th>評価</th><th>2着予測シェア</th><th>3着予測シェア</th><th>総合シェア</th><th>単勝</th></tr></thead>
+          <thead>
+            <tr>
+              <th>AI順位</th>
+              <th>1着想定馬</th>
+              <th>評価</th>
+              <th>🛡️ 堅実相手（AI順位 / シェア）</th>
+              <th>🚀 穴馬（AI順位 / リフト）</th>
+              <th>1着馬単勝</th>
+            </tr>
+          </thead>
           <tbody id="cond-tbody"></tbody>
         </table>
       </div>
@@ -275,42 +309,45 @@ html_template = f"""<!DOCTYPE html>
       const winnerKey = horseKey(horse.num || horse.horse_number);
       if (!winnerKey) return '<span style="color:#64748b;">—</span>';
 
-      let secNum = "";
-      let thdNum = "";
-      const picks = horse.conditional_pair_picks;
-      if (picks && typeof picks === "object" && picks[winnerKey]) {{
-        secNum = horseKey(picks[winnerKey].second);
-        thdNum = horseKey(picks[winnerKey].third);
-      }}
-
-      if (!secNum || !thdNum || secNum === thdNum) {{
-        const cands = [];
-        for (const other of horses) {{
-          const oKey = horseKey(other.num || other.horse_number);
-          if (!oKey || oKey === winnerKey) continue;
-          const places = other.conditional_places;
-          const probs = other.conditional_probs;
-          let secP = 0, thdP = 0;
-          if (places && places[winnerKey]) {{
-            secP = parseFloat(places[winnerKey].second || 0);
-            thdP = parseFloat(places[winnerKey].third || 0);
-          }} else if (probs && probs[winnerKey] != null) {{
-            secP = thdP = parseFloat(probs[winnerKey] || 0);
-          }}
-          if (secP > 0 || thdP > 0) cands.push({{ key: oKey, secP, thdP }});
-        }}
-        if (cands.length >= 2) {{
-          cands.sort((a, b) => b.secP - a.secP);
-          secNum = cands[0].key;
-          const rem = cands.filter(c => c.key !== secNum).sort((a, b) => b.thdP - a.thdP);
-          thdNum = rem[0].key;
-        }}
-      }}
-
-      if (!secNum || !thdNum) return '<span style="color:#64748b;">—</span>';
       const hasBadge = (horse.main_badge && horse.main_badge !== "—");
       const wrapCls = (Number(rank) <= 5 || hasBadge) ? "pair-rec-main" : "pair-rec-sub";
-      return `<span class="${{wrapCls}}"><span class="pair-chip pair-2nd">🥈${{secNum}}番</span><span class="pair-arrow">▸</span><span class="pair-chip pair-3rd">🥉${{thdNum}}番</span></span>`;
+
+      // 1. 新形式（堅実相手 solid ＋ 穴馬 upset）
+      const detailsMap = horse.conditional_partner_details;
+      const picksMap = horse.conditional_partner_picks;
+      if (detailsMap && detailsMap[winnerKey]) {{
+        const d = detailsMap[winnerKey];
+        const s = d.solid || {{}};
+        const u = d.upset || {{}};
+        const sNum = horseKey(s.num);
+        const uNum = horseKey(u.num);
+        if (sNum && uNum) {{
+          const sTitle = `堅実相手: ${{sNum}}番 ${{s.name || ''}} (AI${{s.ai_rank || '?'}}位 / シェア${{((s.share || 0) * 100).toFixed(1)}}%)`;
+          const liftVal = Number(u.lift || 1.0).toFixed(2);
+          const uTitle = `穴馬候補: ${{uNum}}番 ${{u.name || ''}} (AI${{u.ai_rank || '?'}}位 / リフト${{liftVal}}x / 2-3着率${{((u.place23_prob || 0) * 100).toFixed(1)}}%)`;
+          const uCls = u.is_strong_upset ? "pair-upset-strong" : "pair-upset";
+          const uIcon = u.is_strong_upset ? "🔥" : "🚀";
+          return `<span class="${{wrapCls}}"><span class="pair-chip pair-solid" title="${{sTitle}}">🛡️${{sNum}}番</span><span class="pair-chip ${{uCls}}" title="${{uTitle}}">${{uIcon}}${{uNum}}番</span></span>`;
+        }}
+      }} else if (picksMap && picksMap[winnerKey]) {{
+        const sNum = horseKey(picksMap[winnerKey].solid);
+        const uNum = horseKey(picksMap[winnerKey].upset);
+        if (sNum && uNum) {{
+          return `<span class="${{wrapCls}}"><span class="pair-chip pair-solid">🛡️${{sNum}}番</span><span class="pair-chip pair-upset">🚀${{uNum}}番</span></span>`;
+        }}
+      }}
+
+      // 2. 旧形式（後方互換フォールバック）
+      const oldPicks = horse.conditional_pair_picks;
+      if (oldPicks && typeof oldPicks === "object" && oldPicks[winnerKey]) {{
+        const secNum = horseKey(oldPicks[winnerKey].second);
+        const thdNum = horseKey(oldPicks[winnerKey].third);
+        if (secNum && thdNum) {{
+          return `<span class="${{wrapCls}}"><span class="pair-chip pair-2nd">🥈${{secNum}}番</span><span class="pair-arrow">▸</span><span class="pair-chip pair-3rd">🥉${{thdNum}}番</span></span>`;
+        }}
+      }}
+
+      return '<span style="color:#64748b;">—</span>';
     }}
 
     function formatRank(rank, score) {{
@@ -469,7 +506,7 @@ html_template = f"""<!DOCTYPE html>
         </section>
 
         <section class="panel">
-          <h2>📊 出走馬予測ランキング（右端：各馬1着時の2・3着連動推奨）</h2>
+          <h2>📊 出走馬予測ランキング（右端：各馬1着時の🛡️堅実相手・🚀穴馬推奨）</h2>
           <div class="tbl-wrap">
             <table>
               <thead>
@@ -484,7 +521,7 @@ html_template = f"""<!DOCTYPE html>
                   <th>単勝</th>
                   <th>地力評価</th>
                   <th>条件適性</th>
-                  <th>1着時の2・3着推奨</th>
+                  <th>1着時の相手・穴推奨</th>
                 </tr>
               </thead>
               <tbody>
@@ -538,86 +575,75 @@ html_template = f"""<!DOCTYPE html>
 
     function renderConditionalList() {{
       const race = currentRaces[currentRaceIdx];
-      const winnerNumStr = document.getElementById("winner-select").value;
+      const winnerNumStr = horseKey(document.getElementById("winner-select").value);
       if (!race || !winnerNumStr) return;
 
-      const horses = race.horses || [];
-      const selectedWinner = horses.find(h => String(h.num) === String(winnerNumStr));
-      const others = horses.filter(h => String(h.num) !== String(winnerNumStr));
-
-      others.forEach(h => {{
-        const places = (h.conditional_places && h.conditional_places[winnerNumStr]) ? h.conditional_places[winnerNumStr] : null;
-        const fallbackProb = (h.conditional_probs && h.conditional_probs[winnerNumStr] != null) ? parseFloat(h.conditional_probs[winnerNumStr]) : 0;
-        h._second_prob = (places && places.second != null) ? parseFloat(places.second) : fallbackProb;
-        h._third_prob = (places && places.third != null) ? parseFloat(places.third) : fallbackProb;
-        h._current_cond_prob = (h._second_prob + h._third_prob) / 2.0;
-      }});
-      others.sort((a, b) => b._current_cond_prob - a._current_cond_prob);
-
+      const horses = [...(race.horses || [])].sort((a, b) => Number(a.rank || 999) - Number(b.rank || 999));
       const byNum = {{}};
-      others.forEach(h => {{ byNum[String(h.num)] = h; }});
-      const pairPick = (selectedWinner && selectedWinner.conditional_pair_picks && selectedWinner.conditional_pair_picks[winnerNumStr])
-        ? selectedWinner.conditional_pair_picks[winnerNumStr]
+      horses.forEach(h => {{ byNum[horseKey(h.num)] = h; }});
+
+      const selectedWinner = byNum[winnerNumStr];
+      const detail = (selectedWinner && selectedWinner.conditional_partner_details && selectedWinner.conditional_partner_details[winnerNumStr])
+        ? selectedWinner.conditional_partner_details[winnerNumStr]
         : null;
 
-      let secondHorse = pairPick ? byNum[String(pairPick.second)] : null;
-      let thirdHorse = pairPick ? byNum[String(pairPick.third)] : null;
-      if (!secondHorse || !thirdHorse || secondHorse === thirdHorse) {{
-        const sortedBySecond = [...others].sort((a, b) => b._second_prob - a._second_prob);
-        secondHorse = sortedBySecond[0] || null;
-        const sortedByThird = others.filter(h => h !== secondHorse).sort((a, b) => b._third_prob - a._third_prob);
-        thirdHorse = sortedByThird[0] || null;
-      }}
-
       const pairBox = document.getElementById("cond-pair-picks");
-      if (secondHorse && thirdHorse) {{
-        const jointStr = (pairPick && pairPick.joint_share != null)
-          ? `<div style="grid-column: 1 / -1; text-align:right; font-size:0.78rem; color:#475569;">💡 1着「${{selectedWinner ? selectedWinner.num + '番 ' + selectedWinner.name : winnerNumStr + '番'}}」固定時の2・3着推奨ペア同時シェア: <b>${{(parseFloat(pairPick.joint_share) * 100).toFixed(2)}}%</b></div>`
-          : "";
+      if (detail && detail.solid && detail.upset) {{
+        const s = detail.solid;
+        const u = detail.upset;
+        const sHorse = byNum[horseKey(s.num)] || {{}};
+        const uHorse = byNum[horseKey(u.num)] || {{}};
+        const strongTag = u.is_strong_upset
+          ? '<span class="badge badge-burst" style="margin-left:6px;">🔥 強穴(リフト≥1.30x)</span>'
+          : '';
+        const uBorder = u.is_strong_upset ? "#dc2626" : "#ea580c";
+
         pairBox.innerHTML = `
           <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;">
-            <div class="metric-card" style="border-left:4px solid #c0c0c0; text-align:left; padding:12px 14px;">
-              <small style="color:#64748b; font-weight:bold;">🥈 2着予測（最有力）</small>
-              <div style="font-size:1.05rem; font-weight:bold; color:#0f172a; margin-top:4px;">${{secondHorse.num}}番 ${{secondHorse.name}}</div>
-              <small style="color:var(--primary); font-weight:bold;">2着予測シェア: ${{(secondHorse._second_prob * 100).toFixed(1)}}% / 単勝 ${{secondHorse.odds}}倍</small>
+            <div class="metric-card" style="border-left:4px solid #0284c7; text-align:left; padding:12px 14px;">
+              <small style="color:#0369a1; font-weight:bold;">🛡️ 堅実相手（最有力1頭）</small>
+              <div style="font-size:1.05rem; font-weight:bold; color:#0f172a; margin-top:4px;">${{s.num}}番 ${{s.name}} <small style="color:#64748b;">(AI ${{s.ai_rank}}位)</small></div>
+              <small style="color:var(--primary); font-weight:bold;">相手シェア: ${{(Number(s.share || 0) * 100).toFixed(1)}}% / 単勝 ${{sHorse.odds || 'N/A'}}倍</small>
             </div>
-            <div class="metric-card" style="border-left:4px solid #cd7f32; text-align:left; padding:12px 14px;">
-              <small style="color:#64748b; font-weight:bold;">🥉 3着予測（最有力）</small>
-              <div style="font-size:1.05rem; font-weight:bold; color:#0f172a; margin-top:4px;">${{thirdHorse.num}}番 ${{thirdHorse.name}}</div>
-              <small style="color:var(--primary); font-weight:bold;">3着予測シェア: ${{(thirdHorse._third_prob * 100).toFixed(1)}}% / 単勝 ${{thirdHorse.odds}}倍</small>
+            <div class="metric-card" style="border-left:4px solid ${{uBorder}}; text-align:left; padding:12px 14px;">
+              <small style="color:${{uBorder}}; font-weight:bold;">🚀 確率の高い穴馬（予測5位以下・純粋リフト1位）${{strongTag}}</small>
+              <div style="font-size:1.05rem; font-weight:bold; color:#0f172a; margin-top:4px;">${{u.num}}番 ${{u.name}} <small style="color:#64748b;">(AI ${{u.ai_rank}}位)</small></div>
+              <small style="color:${{uBorder}}; font-weight:bold;">超過リフト: ${{Number(u.lift || 1.0).toFixed(2)}}x / 2-3着率: ${{(Number(u.place23_prob || 0) * 100).toFixed(1)}}% / 単勝 ${{uHorse.odds || 'N/A'}}倍</small>
             </div>
-            ${{jointStr}}
           </div>
         `;
       }} else {{
-        pairBox.innerHTML = "";
+        pairBox.innerHTML = '<div class="box" style="color:#64748b; font-size:0.85rem;">このレースの条件付き相手・穴馬データがありません。</div>';
       }}
 
+      // 全出走馬それぞれが1着になった場合の「堅実相手 vs 穴馬」一覧比較表
       const tbody = document.getElementById("cond-tbody");
-      tbody.innerHTML = others.map((h, idx) => {{
-        const rank = idx + 1;
-        const secPct = (h._second_prob * 100).toFixed(1);
-        const thdPct = (h._third_prob * 100).toFixed(1);
-        const avgPct = (h._current_cond_prob * 100).toFixed(1);
+      tbody.innerHTML = horses.map(h => {{
+        const wKey = horseKey(h.num);
+        const isSel = wKey === winnerNumStr;
         const badge = h.main_badge || h.tag || '—';
-        let rankHtml = `${{rank}}位`;
-        if (rank === 1) rankHtml = `<span class="rank-1">1位</span>`;
-        if (rank === 2) rankHtml = `<span class="rank-2">2位</span>`;
-        if (rank === 3) rankHtml = `<span class="rank-3">3位</span>`;
+        const d = (h.conditional_partner_details && h.conditional_partner_details[wKey]) ? h.conditional_partner_details[wKey] : null;
+
+        let solidCell = '<span style="color:#94a3b8;">—</span>';
+        let upsetCell = '<span style="color:#94a3b8;">—</span>';
+        if (d && d.solid) {{
+          const s = d.solid;
+          solidCell = `<span class="pair-chip pair-solid">🛡️${{s.num}}番 ${{s.name}}</span> <small style="color:#475569;">(${{s.ai_rank}}位 / ${{(Number(s.share || 0) * 100).toFixed(1)}}%)</small>`;
+        }}
+        if (d && d.upset) {{
+          const u = d.upset;
+          const uCls = u.is_strong_upset ? "pair-upset-strong" : "pair-upset";
+          const uIcon = u.is_strong_upset ? "🔥" : "🚀";
+          upsetCell = `<span class="pair-chip ${{uCls}}">${{uIcon}}${{u.num}}番 ${{u.name}}</span> <small style="color:#475569;">(${{u.ai_rank}}位 / <b>${{Number(u.lift || 1.0).toFixed(2)}}x</b>)</small>`;
+        }}
 
         return `
-          <tr>
-            <td>${{rankHtml}}</td>
-            <td><span class="num-circle">${{h.num}}</span></td>
-            <td class="left"><b>${{h.name}}</b></td>
-            <td>${{h.rank}}位</td>
+          <tr class="${{isSel ? 'selected-winner-row' : ''}}" style="cursor:pointer;" onclick="document.getElementById('winner-select').value='${{h.num}}'; renderConditionalList();">
+            <td class="rank-cell">${{h.rank}}位</td>
+            <td class="left"><span class="num-circle" style="margin-right:4px;">${{h.num}}</span><b>${{h.name}}</b></td>
             <td><span class="badge ${{getBadgeClass(badge)}}">${{badge}}</span></td>
-            <td style="font-weight:bold; color:#0f172a;">${{secPct}}%</td>
-            <td style="font-weight:bold; color:#334155;">${{thdPct}}%</td>
-            <td>
-              <div>${{avgPct}}%</div>
-              <div class="prob-bar-bg"><div class="prob-bar-fill" style="width: ${{Math.min(100, parseFloat(avgPct) * 2.5)}}%;"></div></div>
-            </td>
+            <td class="left">${{solidCell}}</td>
+            <td class="left">${{upsetCell}}</td>
             <td style="color:var(--primary); font-weight:bold;">${{h.odds}}倍</td>
           </tr>
         `;
